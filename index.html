@@ -105,16 +105,27 @@
     }
 
     .diagnosticsToggle{
-      width:100%;
-      min-width:0;
-      padding:8px 12px;
+      width:auto;
+      min-width:44px;
+      min-height:30px;
+      padding:4px 8px;
+      border:0;
       border-radius:6px;
-      background:#1c0b29;
-      color:#5d456b;
-      font-size:.72rem;
+      background:transparent;
+      color:rgba(255,255,255,.10);
+      font-size:.56rem;
       font-weight:400;
       letter-spacing:.03em;
-      justify-self:stretch;
+      justify-self:end;
+      opacity:.38;
+      box-shadow:none;
+    }
+
+    .diagnosticsToggle:hover,
+    .diagnosticsToggle:focus-visible{
+      color:rgba(255,255,255,.34);
+      opacity:.8;
+      background:rgba(255,255,255,.025);
     }
 
     .diagnosticsPanel{
@@ -220,7 +231,7 @@
   <main class="container">
     <div class="header">
       <h1>dance party</h1>
-      <div class="subtitle">crank all devices & turn off lights</div>
+      <div class="subtitle">crank all devices &amp; turn off lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -244,8 +255,8 @@
   </main>
 
   <script> 
-    const AUDIO_URL = "https://eggtooth.xyz/common2audience.mp3";
-    const PRESHOW_AUDIO_URL = "https://eggtooth.xyz/preshow.mp3";
+    const AUDIO_URL = "https://eggtooth.xyz/Life.mp3";
+    const PRESHOW_AUDIO_URL = "https://eggtooth.xyz/quietWind.mp3";
     const TIME_SERVER_URL = "https://sync1.jbechs.workers.dev/";
 
     const audio = document.getElementById("audio");
