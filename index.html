@@ -155,7 +155,10 @@
        Presentation-only layer: playback/sync logic remains unchanged. */
     #glowScreen{
       position:fixed;
-      inset:0;
+      inset:-3px;
+      width:calc(100dvw + 6px);
+      height:calc(100dvh + 6px);
+      min-height:calc(100svh + 6px);
       z-index:1000;
       overflow:hidden;
       background:#020207;
@@ -183,8 +186,9 @@
       position:absolute;
       inset:0;
       pointer-events:none;
-      background:radial-gradient(circle at 50% 47%, transparent 0 30%, rgba(0,0,0,.10) 58%, rgba(0,0,0,.48) 100%);
-      mix-blend-mode:multiply;
+      /* Keep the perimeter alive: this is intentionally a glow frame, not a dark vignette. */
+      background:radial-gradient(circle at 50% 47%, transparent 0 38%, rgba(255,255,255,.015) 58%, rgba(255,255,255,.075) 100%);
+      mix-blend-mode:screen;
     }
 
     #glowResume{
@@ -277,18 +281,88 @@
     // cue changes remain synchronized. Session-scoped; no storage or identity.
     const glowVariant = Math.random();
 
-    const GLOW_CUES = [
-      // time, hue A, hue B, energy, pulse, label
-      { t:0,   a:195, b:315, e:.72, p:.70 }, // cyan / magenta invitation
-      { t:24,  a:325, b:24,  e:.88, p:1.00 }, // hot pink / orange
-      { t:52,  a:92,  b:205, e:.78, p:1.25 }, // acid green / electric blue
-      { t:82,  a:272, b:332, e:.66, p:.82 }, // violet suspension
-      { t:112, a:18,  b:350, e:.92, p:1.35 }, // amber / red drive
-      { t:145, a:184, b:226, e:.73, p:.95 }, // cool cyan opening
-      { t:174, a:300, b:70,  e:1.00,p:1.65 }, // peak: prismatic
-      { t:196, a:205, b:330, e:.58, p:.55 }, // final bloom / release
-      { t:202, a:250, b:300, e:.25, p:.30 }
+    // MUSIC-DRIVEN DANCE PARTY VISUALS ----------------------------------
+    // Beat grid measured from Life.mp3: ~123.046875 BPM, first beat ~0.06966 s.
+    // Everything below is calculated from media time, so late joins land in phase.
+    const TRACK_BPM = 123.046875;
+    const TRACK_BEAT_ZERO_SEC = 0.069659864;
+    const TRACK_BEAT_SEC = 60 / TRACK_BPM;
+
+    // Each participant gets exactly one visual identity for this page load.
+    // The three tribes share musical choreography but occupy distinct color worlds.
+    const GLOW_PALETTES = [
+      { name:'ultraviolet', a:198, b:302, c:258, edge:188 }, // cyan / violet / indigo
+      { name:'acid',        a:92,  b:184, c:218, edge:72  }, // acid green / turquoise / electric blue
+      { name:'solar',       a:18,  b:342, c:48,  edge:4   }  // amber / hot pink-red / gold
     ];
+    const glowPaletteIndex = Math.floor(Math.random() * GLOW_PALETTES.length);
+    const glowPalette = GLOW_PALETTES[glowPaletteIndex];
+
+    // Section energies follow the analyzed contour of Life.mp3 rather than arbitrary timing.
+    // hueShift rotates within each tribe while preserving its overall identity.
+    const GLOW_CUES = [
+      { t:0,     e:.74, hueShift:0,   bloom:.15 },
+      { t:16,    e:.94, hueShift:10,  bloom:.35 },
+      { t:30,    e:.84, hueShift:26,  bloom:.22 },
+      { t:55.5,  e:.42, hueShift:-8,  bloom:.08 }, // major drop / air
+      { t:68,    e:.66, hueShift:8,   bloom:.14 },
+      { t:76,    e:1.00,hueShift:20,  bloom:.40 }, // strong peak
+      { t:92,    e:.78, hueShift:38,  bloom:.22 },
+      { t:100,   e:1.00,hueShift:52,  bloom:.46 }, // strong peak
+      { t:111.5, e:.43, hueShift:0,   bloom:.08 }, // second breakdown
+      { t:124,   e:.52, hueShift:-18, bloom:.10 },
+      { t:142,   e:.70, hueShift:12,  bloom:.18 },
+      { t:155,   e:.92, hueShift:30,  bloom:.34 },
+      { t:171,   e:.98, hueShift:48,  bloom:.40 },
+      { t:184,   e:1.00,hueShift:66,  bloom:.50 }, // final sustained peak
+      { t:196,   e:.78, hueShift:82,  bloom:.34 },
+      { t:202.64,e:.20, hueShift:96,  bloom:.05 }
+    ];
+
+    let glowTiltX = 0;
+    let glowTiltY = 0;
+    let glowMotionEnabled = false;
+
+    function handleGlowOrientation(ev){
+      // Clamp and low-pass so the image feels liquid rather than twitchy.
+      const gamma = Math.max(-35, Math.min(35, Number(ev.gamma) || 0)) / 35;
+      const beta = Math.max(-35, Math.min(35, (Number(ev.beta) || 0) - 45)) / 35;
+      glowTiltX += (gamma - glowTiltX) * .12;
+      glowTiltY += (beta - glowTiltY) * .12;
+    }
+
+    function enableGlowMotion(){
+      if(glowMotionEnabled) return;
+      glowMotionEnabled = true;
+      window.addEventListener('deviceorientation', handleGlowOrientation, { passive:true });
+    }
+
+    function requestGlowMotionAccess(){
+      // iOS exposes permission only from a user gesture; Android/Chrome generally does not require it.
+      try{
+        if(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function'){
+          const result = DeviceOrientationEvent.requestPermission();
+          if(result && typeof result.then === 'function'){
+            result.then(state=>{ if(state === 'granted') enableGlowMotion(); }).catch(()=>{});
+          }
+        }else{
+          enableGlowMotion();
+        }
+      }catch(_err){
+        // Motion is optional; never interfere with playback.
+      }
+    }
+
+    function beatStateAt(t){
+      const beatFloat = (t - TRACK_BEAT_ZERO_SEC) / TRACK_BEAT_SEC;
+      const beatIndex = Math.floor(beatFloat);
+      const phase = beatFloat - beatIndex;
+      // Quick luminous attack with a gentle decay over one beat.
+      const pulse = phase < 0 ? 0 : Math.exp(-phase * 5.2);
+      const phraseBeat = ((beatIndex % 16) + 16) % 16;
+      const phraseHit = phraseBeat === 0 ? Math.exp(-Math.max(0, phase) * 7.5) : 0;
+      return { beatIndex, phase, pulse, phraseHit };
+    }
 
     function resizeGlow(){
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -344,6 +418,17 @@
       return c;
     }
 
+    function sectionTransitionStrength(t){
+      let strength = 0;
+      for(let i=1;i<GLOW_CUES.length-1;i++){
+        const dt = t - GLOW_CUES[i].t;
+        if(dt >= 0 && dt < .9){
+          strength = Math.max(strength, (1 - dt/.9) * GLOW_CUES[i].bloom);
+        }
+      }
+      return strength;
+    }
+
     function hsl(h,s,l,a=1){
       return `hsla(${((h%360)+360)%360} ${s}% ${l}% / ${a})`;
     }
@@ -354,68 +439,100 @@
       const h = window.innerHeight;
       const trackT = glowTrackTime();
       const cue = cueAt(trackT);
+      const beatState = beatStateAt(trackT);
       const clock = nowMs / 1000;
       const phase = glowVariant * Math.PI * 2;
-      const beat = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p + phase * .16);
-      const breath = .5 + .5 * Math.sin(clock * .58 + phase);
-      const energy = cue.e * (.86 + beat * .14);
+      const beat = beatState.pulse;
+      const phraseHit = beatState.phraseHit;
+      const transitionHit = sectionTransitionStrength(trackT);
+      const breath = .5 + .5 * Math.sin(clock * .44 + phase);
+      const energy = cue.e * (.88 + beat * .12);
+
+      const hueA = glowPalette.a + cue.hueShift;
+      const hueB = glowPalette.b + cue.hueShift * .55;
+      const hueC = glowPalette.c - cue.hueShift * .30;
 
       glowCtx.globalCompositeOperation = 'source-over';
-      glowCtx.fillStyle = hsl(cue.a + 35, 65, 3 + 4*energy, 1);
+      glowCtx.fillStyle = hsl(hueC, 82, 5 + 5*energy, 1);
       glowCtx.fillRect(0,0,w,h);
 
-      // Large drifting color bodies. All devices share cue colors/timing, while
-      // phase and geometry differ subtly so a crowd reads as a constellation.
+      // Tilt translates the whole light-world, giving the phone a liquid/slosh response.
+      const tx = glowTiltX * w * .12;
+      const ty = glowTiltY * h * .10;
+
       const blobs = [
-        { hue:cue.a,      x:.50 + .15*Math.sin(clock*.31 + phase),     y:.43 + .12*Math.cos(clock*.27 + phase*.7),  r:.54 },
-        { hue:cue.b,      x:.36 + .20*Math.cos(clock*.23 + phase*1.4), y:.58 + .14*Math.sin(clock*.33 + phase*.4),  r:.47 },
-        { hue:cue.a+125,  x:.67 + .16*Math.sin(clock*.19 + phase*2.1), y:.61 + .17*Math.cos(clock*.21 + phase*1.2), r:.38 }
+        { hue:hueA, x:.48 + .16*Math.sin(clock*.27 + phase),     y:.42 + .13*Math.cos(clock*.23 + phase*.7),  r:.62 },
+        { hue:hueB, x:.34 + .21*Math.cos(clock*.19 + phase*1.4), y:.60 + .15*Math.sin(clock*.29 + phase*.4),  r:.56 },
+        { hue:hueC, x:.69 + .18*Math.sin(clock*.17 + phase*2.1), y:.63 + .18*Math.cos(clock*.18 + phase*1.2), r:.46 }
       ];
 
       glowCtx.globalCompositeOperation = 'screen';
       for(const b of blobs){
-        const x=b.x*w, y=b.y*h, r=b.r*Math.max(w,h)*( .88 + .10*breath );
+        const x=b.x*w + tx, y=b.y*h + ty, r=b.r*Math.max(w,h)*(.91 + .07*breath + .05*beat);
         const g=glowCtx.createRadialGradient(x,y,0,x,y,r);
-        g.addColorStop(0, hsl(b.hue + 18*beat, 98, 64, .88*energy));
-        g.addColorStop(.22, hsl(b.hue, 96, 54, .62*energy));
-        g.addColorStop(.58, hsl(b.hue-18, 94, 42, .22*energy));
-        g.addColorStop(1, hsl(b.hue, 90, 24, 0));
+        g.addColorStop(0, hsl(b.hue + 12*beat, 100, 68, .92*energy));
+        g.addColorStop(.22, hsl(b.hue, 100, 56, .72*energy));
+        g.addColorStop(.62, hsl(b.hue-16, 96, 42, .28*energy));
+        g.addColorStop(1, hsl(b.hue, 94, 28, 0));
         glowCtx.fillStyle=g;
         glowCtx.fillRect(x-r,y-r,r*2,r*2);
       }
 
-      // Central 'living object': a soft orb with a heartbeat-like expansion.
-      const cx=w*(.50 + .025*Math.sin(clock*.41+phase));
-      const cy=h*(.50 + .020*Math.cos(clock*.37+phase));
-      const rr=Math.min(w,h)*(.18 + .035*beat + .018*breath);
-      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,rr*2.5);
-      core.addColorStop(0, `rgba(255,255,255,${.72 + .18*beat})`);
-      core.addColorStop(.12, hsl(cue.a + 45, 90, 80, .62));
-      core.addColorStop(.42, hsl(cue.b, 100, 58, .32));
-      core.addColorStop(1, hsl(cue.b, 100, 45, 0));
+      // Bright perimeter: visually swallows browser chrome instead of framing the webpage.
+      const edgePower = .16 + .20*energy + .22*beat + .18*phraseHit;
+      const edge=glowCtx.createRadialGradient(w*.5,h*.5,Math.min(w,h)*.22,w*.5,h*.5,Math.max(w,h)*.78);
+      edge.addColorStop(0, hsl(glowPalette.edge + cue.hueShift, 100, 58, 0));
+      edge.addColorStop(.72, hsl(glowPalette.edge + cue.hueShift, 100, 58, .03));
+      edge.addColorStop(1, hsl(glowPalette.edge + cue.hueShift, 100, 64, edgePower));
+      glowCtx.fillStyle=edge;
+      glowCtx.fillRect(0,0,w,h);
+
+      // Central living orb, now actually breathing with the detected house beat.
+      const cx=w*.50 + tx*.55 + w*.025*Math.sin(clock*.37+phase);
+      const cy=h*.50 + ty*.55 + h*.020*Math.cos(clock*.33+phase);
+      const rr=Math.min(w,h)*(.17 + .050*beat + .016*breath);
+      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,rr*2.8);
+      core.addColorStop(0, `rgba(255,255,255,${.76 + .20*beat})`);
+      core.addColorStop(.10, hsl(hueA + 35, 94, 82, .70));
+      core.addColorStop(.38, hsl(hueB, 100, 60, .40));
+      core.addColorStop(1, hsl(hueB, 100, 45, 0));
       glowCtx.fillStyle=core;
       glowCtx.beginPath();
-      glowCtx.arc(cx,cy,rr*2.5,0,Math.PI*2);
+      glowCtx.arc(cx,cy,rr*2.8,0,Math.PI*2);
       glowCtx.fill();
 
-      // A few orbiting sparks read especially well when phones are raised.
-      for(let i=0;i<5;i++){
-        const a=clock*(.35+.055*i)+phase+i*1.256;
-        const rad=Math.min(w,h)*(.24+.035*i);
+      // Orbiting sparks accelerate visually on beat attacks.
+      for(let i=0;i<6;i++){
+        const a=clock*(.30+.045*i)+phase+i*1.047;
+        const rad=Math.min(w,h)*(.24+.032*i);
         const sx=cx+Math.cos(a)*rad;
         const sy=cy+Math.sin(a*1.07)*rad*.72;
-        const sr=2.5 + 3.5*energy + 2*beat;
-        glowCtx.fillStyle=hsl(cue.a + i*48, 100, 82, .45+.35*energy);
+        const sr=2.4 + 4.2*energy + 4.0*beat;
+        glowCtx.fillStyle=hsl([hueA,hueB,hueC][i%3] + i*9, 100, 84, .48+.38*energy);
         glowCtx.beginPath();
         glowCtx.arc(sx,sy,sr,0,Math.PI*2);
         glowCtx.fill();
       }
 
-      // White-out swell in the last six seconds of the 3:22 test track.
-      if(trackT >= 196 && trackT < 202){
-        const finale = Math.min(1, (trackT-196)/6);
+      // Every 16 beats, all three tribes make a shared whole-screen color gesture.
+      if(phraseHit > .025){
         glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.28})`;
+        glowCtx.fillStyle=hsl(hueA + 22, 100, 60, phraseHit * (.11 + .12*cue.e));
+        glowCtx.fillRect(0,0,w,h);
+      }
+
+      // Section entrances get a larger synchronized bloom, derived from actual track structure.
+      if(transitionHit > .01){
+        glowCtx.globalCompositeOperation='screen';
+        glowCtx.fillStyle=`rgba(255,255,255,${transitionHit*.42})`;
+        glowCtx.fillRect(0,0,w,h);
+      }
+
+      // Final six seconds: one communal luminous release across all palettes.
+      if(trackT >= 196 && trackT < 202.64){
+        const finale = Math.min(1, (trackT-196)/6.64);
+        glowCtx.globalCompositeOperation='screen';
+        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.32})`;
         glowCtx.fillRect(0,0,w,h);
       }
 
@@ -2404,6 +2521,7 @@
     playButton.addEventListener("click", ()=>{
       // Keep fullscreen request synchronous with the trusted Begin tap.
       requestGlowFullscreen();
+      requestGlowMotionAccess();
       activateGlow();
       handlePrepare(false);
     });
@@ -2413,6 +2531,7 @@
       }else{
         // Manual/late Begin gets the same best-effort fullscreen treatment.
         requestGlowFullscreen();
+        requestGlowMotionAccess();
         activateGlow();
         handleManualStart();
       }
