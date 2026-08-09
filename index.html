@@ -15,7 +15,7 @@
       min-height:100vh;
       display:grid;
       place-items:center;
-      background:#120b18;
+      background:#160b2d;
       color:#fff;
       font-family:'Inter', system-ui, sans-serif;
     }
@@ -57,7 +57,7 @@
     }
 
     input{
-      background:#241034;
+      background:#222;
       color:#fff;
     }
 
@@ -105,27 +105,16 @@
     }
 
     .diagnosticsToggle{
-      width:auto;
-      min-width:44px;
-      min-height:30px;
-      padding:4px 8px;
-      border:0;
+      width:100%;
+      min-width:0;
+      padding:8px 12px;
       border-radius:6px;
-      background:transparent;
-      color:rgba(255,255,255,.10);
-      font-size:.56rem;
+      background:#131313;
+      color:#242424;
+      font-size:.72rem;
       font-weight:400;
       letter-spacing:.03em;
-      justify-self:end;
-      opacity:.38;
-      box-shadow:none;
-    }
-
-    .diagnosticsToggle:hover,
-    .diagnosticsToggle:focus-visible{
-      color:rgba(255,255,255,.34);
-      opacity:.8;
-      background:rgba(255,255,255,.025);
+      justify-self:stretch;
     }
 
     .diagnosticsPanel{
@@ -154,7 +143,7 @@
 
     input[type="datetime-local"]{
       color:#fff;
-      background:#241034;
+      background:#222;
     }
 
     input[type="datetime-local"]::-webkit-calendar-picker-indicator{
@@ -166,10 +155,13 @@
        Presentation-only layer: playback/sync logic remains unchanged. */
     #glowScreen{
       position:fixed;
-      inset:0;
+      inset:-3px;
+      width:calc(100dvw + 6px);
+      height:calc(100dvh + 6px);
+      min-height:calc(100svh + 6px);
       z-index:1000;
       overflow:hidden;
-      background:#160824;
+      background:#020207;
       opacity:0;
       visibility:hidden;
       transition:opacity 700ms ease;
@@ -194,25 +186,9 @@
       position:absolute;
       inset:0;
       pointer-events:none;
-      background:radial-gradient(circle at 50% 47%, transparent 0 30%, rgba(0,0,0,.10) 58%, rgba(0,0,0,.48) 100%);
-      mix-blend-mode:multiply;
-    }
-
-    #glowCountdown{
-      position:absolute;
-      left:50%;
-      top:max(7vh,28px);
-      transform:translateX(-50%);
-      z-index:3;
-      min-width:12ch;
-      text-align:center;
-      font-size:clamp(1.35rem,5vw,2.2rem);
-      font-weight:700;
-      letter-spacing:.02em;
-      color:rgba(255,255,255,.94);
-      font-variant-numeric:tabular-nums;
-      text-shadow:0 2px 18px rgba(0,0,0,.55);
-      pointer-events:none;
+      /* Keep the perimeter alive: this is intentionally a glow frame, not a dark vignette. */
+      background:radial-gradient(circle at 50% 47%, transparent 0 38%, rgba(255,255,255,.015) 58%, rgba(255,255,255,.075) 100%);
+      mix-blend-mode:screen;
     }
 
     #glowResume{
@@ -234,7 +210,55 @@
 
     #glowResume.hidden{ display:none; }
 
-  </style>
+    #glowCountdown{
+      position:absolute;
+      inset:0;
+      z-index:1;
+      display:grid;
+      place-items:center;
+      pointer-events:none;
+      font-family:'Inter', system-ui, sans-serif;
+      font-size:clamp(4.5rem, 24vw, 11rem);
+      font-weight:600;
+      letter-spacing:-0.045em;
+      line-height:1;
+      font-variant-numeric:tabular-nums;
+      color:rgba(255,255,255,.94);
+      text-shadow:0 0 18px rgba(255,255,255,.18), 0 0 54px rgba(255,255,255,.10);
+      opacity:0;
+      transition:opacity 220ms ease;
+    }
+
+    #glowCountdown.visible{ opacity:1; }
+
+  
+  /* Participant-facing diagnostics affordance: intentionally nearly invisible. */
+  #diagnosticsToggle,
+  .diagnostics-toggle,
+  #infoToggle,
+  .info-toggle {
+    opacity: 0.10 !important;
+    font-size: 9px !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    text-transform: lowercase !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    color: rgba(255,255,255,0.55) !important;
+  }
+  #diagnosticsToggle:hover,
+  #diagnosticsToggle:focus,
+  .diagnostics-toggle:hover,
+  .diagnostics-toggle:focus,
+  #infoToggle:hover,
+  #infoToggle:focus,
+  .info-toggle:hover,
+  .info-toggle:focus {
+    opacity: 0.35 !important;
+  }
+
+</style>
 </head>
 
 <body>
@@ -242,14 +266,14 @@
   <div id="glowScreen" aria-hidden="true">
     <canvas id="glowCanvas"></canvas>
     <div id="glowVignette"></div>
-    <div id="glowCountdown" aria-live="polite"></div>
+    <div id="glowCountdown" aria-hidden="true"></div>
     <button id="glowResume" class="hidden" type="button">Tap to resume sound</button>
   </div>
 
   <main class="container">
     <div class="header">
-      <h1>dance party</h1>
-      <div class="subtitle">crank all devices & turn off lights</div>
+      <h1>makeshift dance party</h1>
+      <div class="subtitle">crank your devices & turn off the lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -284,7 +308,6 @@
     const startInput = document.getElementById("startTime");
     const statusEl = document.getElementById("status");
     const countdownEl = document.getElementById("countdown");
-    const glowCountdownEl = document.getElementById("glowCountdown");
     const diagnosticsToggle = document.getElementById("diagnosticsToggle");
     const diagnosticsPanel = document.getElementById("diagnosticsPanel");
     const transportEl = document.getElementById("transport");
@@ -299,8 +322,9 @@
     const glowCanvas = document.getElementById("glowCanvas");
     const glowCtx = glowCanvas.getContext("2d", { alpha:false });
     const glowResume = document.getElementById("glowResume");
+    const glowCountdown = document.getElementById("glowCountdown");
     let glowActive = false;
-    let glowPerformanceStarted = false;
+    let visualCurtainOpen = false;
     let glowFrame = null;
     let glowTapTimes = [];
 
@@ -308,18 +332,88 @@
     // cue changes remain synchronized. Session-scoped; no storage or identity.
     const glowVariant = Math.random();
 
-    const GLOW_CUES = [
-      // time, hue A, hue B, energy, pulse, label
-      { t:0,   a:195, b:315, e:.72, p:.70 }, // cyan / magenta invitation
-      { t:24,  a:325, b:24,  e:.88, p:1.00 }, // hot pink / orange
-      { t:52,  a:92,  b:205, e:.78, p:1.25 }, // acid green / electric blue
-      { t:82,  a:272, b:332, e:.66, p:.82 }, // violet suspension
-      { t:112, a:18,  b:350, e:.92, p:1.35 }, // amber / red drive
-      { t:145, a:184, b:226, e:.73, p:.95 }, // cool cyan opening
-      { t:174, a:300, b:70,  e:1.00,p:1.65 }, // peak: prismatic
-      { t:196, a:205, b:330, e:.58, p:.55 }, // final bloom / release
-      { t:202, a:250, b:300, e:.25, p:.30 }
+    // MUSIC-DRIVEN DANCE PARTY VISUALS ----------------------------------
+    // Beat grid measured from Life.mp3: ~123.046875 BPM, first beat ~0.06966 s.
+    // Everything below is calculated from media time, so late joins land in phase.
+    const TRACK_BPM = 123.046875;
+    const TRACK_BEAT_ZERO_SEC = 0.069659864;
+    const TRACK_BEAT_SEC = 60 / TRACK_BPM;
+
+    // Each participant gets exactly one visual identity for this page load.
+    // The three tribes share musical choreography but occupy distinct color worlds.
+    const GLOW_PALETTES = [
+      { name:'ultraviolet', a:198, b:302, c:258, edge:188 }, // cyan / violet / indigo
+      { name:'acid',        a:92,  b:184, c:218, edge:72  }, // acid green / turquoise / electric blue
+      { name:'solar',       a:18,  b:342, c:48,  edge:4   }  // amber / hot pink-red / gold
     ];
+    const glowPaletteIndex = Math.floor(Math.random() * GLOW_PALETTES.length);
+    const glowPalette = GLOW_PALETTES[glowPaletteIndex];
+
+    // Section energies follow the analyzed contour of Life.mp3 rather than arbitrary timing.
+    // hueShift rotates within each tribe while preserving its overall identity.
+    const GLOW_CUES = [
+      { t:0,     e:.74, hueShift:0,   bloom:.15 },
+      { t:16,    e:.94, hueShift:10,  bloom:.35 },
+      { t:30,    e:.84, hueShift:26,  bloom:.22 },
+      { t:55.5,  e:.42, hueShift:-8,  bloom:.08 }, // major drop / air
+      { t:68,    e:.66, hueShift:8,   bloom:.14 },
+      { t:76,    e:1.00,hueShift:20,  bloom:.40 }, // strong peak
+      { t:92,    e:.78, hueShift:38,  bloom:.22 },
+      { t:100,   e:1.00,hueShift:52,  bloom:.46 }, // strong peak
+      { t:111.5, e:.43, hueShift:0,   bloom:.08 }, // second breakdown
+      { t:124,   e:.52, hueShift:-18, bloom:.10 },
+      { t:142,   e:.70, hueShift:12,  bloom:.18 },
+      { t:155,   e:.92, hueShift:30,  bloom:.34 },
+      { t:171,   e:.98, hueShift:48,  bloom:.40 },
+      { t:184,   e:1.00,hueShift:66,  bloom:.50 }, // final sustained peak
+      { t:196,   e:.78, hueShift:82,  bloom:.34 },
+      { t:202.64,e:.20, hueShift:96,  bloom:.05 }
+    ];
+
+    let glowTiltX = 0;
+    let glowTiltY = 0;
+    let glowMotionEnabled = false;
+
+    function handleGlowOrientation(ev){
+      // Clamp and low-pass so the image feels liquid rather than twitchy.
+      const gamma = Math.max(-35, Math.min(35, Number(ev.gamma) || 0)) / 35;
+      const beta = Math.max(-35, Math.min(35, (Number(ev.beta) || 0) - 45)) / 35;
+      glowTiltX += (gamma - glowTiltX) * .12;
+      glowTiltY += (beta - glowTiltY) * .12;
+    }
+
+    function enableGlowMotion(){
+      if(glowMotionEnabled) return;
+      glowMotionEnabled = true;
+      window.addEventListener('deviceorientation', handleGlowOrientation, { passive:true });
+    }
+
+    function requestGlowMotionAccess(){
+      // iOS exposes permission only from a user gesture; Android/Chrome generally does not require it.
+      try{
+        if(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function'){
+          const result = DeviceOrientationEvent.requestPermission();
+          if(result && typeof result.then === 'function'){
+            result.then(state=>{ if(state === 'granted') enableGlowMotion(); }).catch(()=>{});
+          }
+        }else{
+          enableGlowMotion();
+        }
+      }catch(_err){
+        // Motion is optional; never interfere with playback.
+      }
+    }
+
+    function beatStateAt(t){
+      const beatFloat = (t - TRACK_BEAT_ZERO_SEC) / TRACK_BEAT_SEC;
+      const beatIndex = Math.floor(beatFloat);
+      const phase = beatFloat - beatIndex;
+      // Quick luminous attack with a gentle decay over one beat.
+      const pulse = phase < 0 ? 0 : Math.exp(-phase * 5.2);
+      const phraseBeat = ((beatIndex % 16) + 16) % 16;
+      const phraseHit = phraseBeat === 0 ? Math.exp(-Math.max(0, phase) * 7.5) : 0;
+      return { beatIndex, phase, pulse, phraseHit };
+    }
 
     function resizeGlow(){
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -375,110 +469,140 @@
       return c;
     }
 
+    function sectionTransitionStrength(t){
+      let strength = 0;
+      for(let i=1;i<GLOW_CUES.length-1;i++){
+        const dt = t - GLOW_CUES[i].t;
+        if(dt >= 0 && dt < .9){
+          strength = Math.max(strength, (1 - dt/.9) * GLOW_CUES[i].bloom);
+        }
+      }
+      return strength;
+    }
+
     function hsl(h,s,l,a=1){
       return `hsla(${((h%360)+360)%360} ${s}% ${l}% / ${a})`;
     }
 
-    function drawGlow(nowMs){
-      if(!glowActive) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const trackT = glowTrackTime();
-      const cue = cueAt(trackT);
-      const clock = nowMs / 1000;
+    function drawResetPreshow(nowMs, w, h){
+      const t = nowMs / 1000;
       const phase = glowVariant * Math.PI * 2;
-      const beat = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p + phase * .16);
-      const breath = .5 + .5 * Math.sin(clock * .58 + phase);
-      const energy = cue.e * (.86 + beat * .14);
 
+      // Near-blank wind field: always paints a frame, with only a few
+      // slow pale currents. No audio-state dependencies live in this renderer.
       glowCtx.globalCompositeOperation = 'source-over';
-      // Deep-purple luminous field beneath every state.
-      glowCtx.fillStyle = '#160824';
+      glowCtx.fillStyle = '#05070a';
+      glowCtx.fillRect(0, 0, w, h);
+
+      for(let i=0;i<4;i++){
+        const y = h * (.20 + i*.20) + Math.sin(t*(.11+i*.018)+phase+i)*h*.035;
+        const x = w * (.45 + .20*Math.sin(t*(.07+i*.012)+phase*.4+i));
+        const rx = Math.max(w,h) * (.55 + i*.08);
+        const ry = Math.max(24, h * (.035 + i*.008));
+        const g = glowCtx.createRadialGradient(x,y,0,x,y,rx);
+        g.addColorStop(0, `rgba(205,220,235,${.055 + i*.010})`);
+        g.addColorStop(.35, `rgba(150,170,190,${.025 + i*.006})`);
+        g.addColorStop(1, 'rgba(80,100,120,0)');
+        glowCtx.fillStyle = g;
+        glowCtx.save();
+        glowCtx.translate(x,y);
+        glowCtx.rotate(Math.sin(t*.045+i)*.08);
+        glowCtx.scale(1, ry/rx);
+        glowCtx.beginPath();
+        glowCtx.arc(0,0,rx,0,Math.PI*2);
+        glowCtx.fill();
+        glowCtx.restore();
+      }
+    }
+
+    function drawResetLava(nowMs, w, h){
+      const trackT = Number.isFinite(audio.currentTime) ? Math.max(0,audio.currentTime) : 0;
+      const beatState = beatStateAt(trackT);
+      const beat = beatState.pulse;
+      const t = nowMs / 1000;
+      const phase = glowVariant * Math.PI * 2;
+
+      const hueA = glowPalette.a;
+      const hueB = glowPalette.b;
+      const hueC = glowPalette.c;
+
+      // Plain dark color base.
+      glowCtx.globalCompositeOperation = 'source-over';
+      glowCtx.fillStyle = hsl(hueC, 75, 5 + beat*3, 1);
       glowCtx.fillRect(0,0,w,h);
 
-      // PRESHOW: alive, but deliberately restrained. The handset should already
-      // feel luminous in the room without spending the visual payoff before cue 0.
-      if(!glowPerformanceStarted){
-        const preshowBreath = .5 + .5 * Math.sin(clock * .34 + phase);
-        const preshowBodies = [
-          { hue:285, x:.46 + .07*Math.sin(clock*.12 + phase),     y:.46 + .06*Math.cos(clock*.10 + phase*.7), r:.62, a:.16 },
-          { hue:330, x:.60 + .06*Math.cos(clock*.09 + phase*1.3), y:.57 + .05*Math.sin(clock*.11 + phase*.5), r:.48, a:.10 }
-        ];
-        glowCtx.globalCompositeOperation='screen';
-        for(const b of preshowBodies){
-          const x=b.x*w, y=b.y*h, r=b.r*Math.max(w,h)*( .98 + .04*preshowBreath );
-          const g=glowCtx.createRadialGradient(x,y,0,x,y,r);
-          g.addColorStop(0, hsl(b.hue, 88, 58, b.a*(.82+.18*preshowBreath)));
-          g.addColorStop(.42, hsl(b.hue+24, 82, 44, b.a*.46));
-          g.addColorStop(1, hsl(b.hue, 80, 30, 0));
-          glowCtx.fillStyle=g;
-          glowCtx.fillRect(x-r,y-r,r*2,r*2);
-        }
-        glowFrame=requestAnimationFrame(drawGlow);
-        return;
-      }
-
-      // SHOW: the full colorful object arrives at curtain-up. All devices share
-      // cue colors/timing, while phase and geometry differ subtly across the crowd.
-      const blobs = [
-        { hue:cue.a,      x:.50 + .15*Math.sin(clock*.31 + phase),     y:.43 + .12*Math.cos(clock*.27 + phase*.7),  r:.54 },
-        { hue:cue.b,      x:.36 + .20*Math.cos(clock*.23 + phase*1.4), y:.58 + .14*Math.sin(clock*.33 + phase*.4),  r:.47 },
-        { hue:cue.a+125,  x:.67 + .16*Math.sin(clock*.19 + phase*2.1), y:.61 + .17*Math.cos(clock*.21 + phase*1.2), r:.38 }
+      // Five large lava bodies. Only radial gradients + ellipses: intentionally
+      // boring browser primitives so this becomes our known-good visual baseline.
+      const bodies = [
+        {x:.25,y:.30,rx:.42,ry:.28,sp:.13,off:0.0,h:hueA},
+        {x:.70,y:.28,rx:.38,ry:.34,sp:.10,off:1.4,h:hueB},
+        {x:.34,y:.72,rx:.45,ry:.30,sp:.08,off:2.8,h:hueC+35},
+        {x:.74,y:.70,rx:.36,ry:.26,sp:.12,off:4.1,h:hueA+48},
+        {x:.52,y:.52,rx:.30,ry:.43,sp:.06,off:5.2,h:hueB-30}
       ];
 
-      glowCtx.globalCompositeOperation = 'screen';
-      for(const b of blobs){
-        const x=b.x*w, y=b.y*h, r=b.r*Math.max(w,h)*( .88 + .10*breath );
-        const g=glowCtx.createRadialGradient(x,y,0,x,y,r);
-        g.addColorStop(0, hsl(b.hue + 18*beat, 98, 64, .88*energy));
-        g.addColorStop(.22, hsl(b.hue, 96, 54, .62*energy));
-        g.addColorStop(.58, hsl(b.hue-18, 94, 42, .22*energy));
-        g.addColorStop(1, hsl(b.hue, 90, 24, 0));
+      for(let i=0;i<bodies.length;i++){
+        const b=bodies[i];
+        const driftX = Math.sin(t*b.sp + phase + b.off) * w*.12;
+        const driftY = Math.cos(t*(b.sp*.83) + phase*.6 + b.off) * h*.10;
+        const cx = b.x*w + driftX;
+        const cy = b.y*h + driftY;
+        const pulse = 1 + beat*.10 + .035*Math.sin(t*.31+b.off);
+        const rx = Math.max(w,h)*b.rx*pulse;
+        const ry = Math.max(w,h)*b.ry*(1+beat*.07);
+
+        const g = glowCtx.createRadialGradient(cx,cy,0,cx,cy,rx);
+        g.addColorStop(0, hsl(b.h + beat*12, 100, 69, .88));
+        g.addColorStop(.24, hsl(b.h, 98, 57, .72));
+        g.addColorStop(.58, hsl(b.h-18, 96, 43, .35));
+        g.addColorStop(1, hsl(b.h-25, 92, 28, 0));
+
         glowCtx.fillStyle=g;
-        glowCtx.fillRect(x-r,y-r,r*2,r*2);
-      }
-
-      // Central 'living object': a soft orb with a heartbeat-like expansion.
-      const cx=w*(.50 + .025*Math.sin(clock*.41+phase));
-      const cy=h*(.50 + .020*Math.cos(clock*.37+phase));
-      const rr=Math.min(w,h)*(.18 + .035*beat + .018*breath);
-      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,rr*2.5);
-      core.addColorStop(0, `rgba(255,255,255,${.72 + .18*beat})`);
-      core.addColorStop(.12, hsl(cue.a + 45, 90, 80, .62));
-      core.addColorStop(.42, hsl(cue.b, 100, 58, .32));
-      core.addColorStop(1, hsl(cue.b, 100, 45, 0));
-      glowCtx.fillStyle=core;
-      glowCtx.beginPath();
-      glowCtx.arc(cx,cy,rr*2.5,0,Math.PI*2);
-      glowCtx.fill();
-
-      // A few orbiting sparks read especially well when phones are raised.
-      for(let i=0;i<5;i++){
-        const a=clock*(.35+.055*i)+phase+i*1.256;
-        const rad=Math.min(w,h)*(.24+.035*i);
-        const sx=cx+Math.cos(a)*rad;
-        const sy=cy+Math.sin(a*1.07)*rad*.72;
-        const sr=2.5 + 3.5*energy + 2*beat;
-        glowCtx.fillStyle=hsl(cue.a + i*48, 100, 82, .45+.35*energy);
+        glowCtx.save();
+        glowCtx.translate(cx,cy);
+        glowCtx.rotate(Math.sin(t*(b.sp*.65)+b.off)*.45);
+        glowCtx.scale(1, Math.max(.2, ry/rx));
         glowCtx.beginPath();
-        glowCtx.arc(sx,sy,sr,0,Math.PI*2);
+        glowCtx.arc(0,0,rx,0,Math.PI*2);
         glowCtx.fill();
+        glowCtx.restore();
       }
 
-      // White-out swell in the last six seconds of the 3:22 test track.
-      if(trackT >= 196 && trackT < 202){
-        const finale = Math.min(1, (trackT-196)/6);
-        glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.28})`;
+      // Beat wash makes the whole phone breathe without requiring compositing.
+      if(beat > .06){
+        glowCtx.fillStyle = hsl(hueA + hueB*.05, 100, 65, Math.min(.12,beat*.10));
         glowCtx.fillRect(0,0,w,h);
       }
+    }
 
-      glowFrame=requestAnimationFrame(drawGlow);
+    function drawGlow(nowMs){
+      if(!glowActive) return;
+
+      const w = Math.max(1, window.innerWidth);
+      const h = Math.max(1, window.innerHeight);
+
+      try{
+        if(visualCurtainOpen){
+          drawResetLava(nowMs,w,h);
+        }else{
+          drawResetPreshow(nowMs,w,h);
+        }
+      }catch(err){
+        // Fail visibly rather than silently: a deep red frame means the canvas
+        // loop itself is alive but a drawing operation failed.
+        glowCtx.globalCompositeOperation = 'source-over';
+        glowCtx.fillStyle = '#220000';
+        glowCtx.fillRect(0,0,w,h);
+        console.error('Glow render error', err);
+      }
+
+      glowFrame = requestAnimationFrame(drawGlow);
     }
 
     function activateGlow(){
       if(glowActive) return;
       glowActive=true;
+      visualCurtainOpen=false;
       resizeGlow();
       glowScreen.classList.add('active');
       glowScreen.setAttribute('aria-hidden','false');
@@ -487,10 +611,26 @@
 
     function deactivateGlow(){
       glowActive=false;
+      visualCurtainOpen=false;
       if(glowFrame){ cancelAnimationFrame(glowFrame); glowFrame=null; }
       glowScreen.classList.remove('active');
       glowScreen.setAttribute('aria-hidden','true');
       glowResume.classList.add('hidden');
+      setGlowCountdown(null);
+    }
+
+
+    function setGlowCountdown(msRemaining){
+      if(!glowCountdown) return;
+      if(msRemaining == null || msRemaining <= 0){
+        glowCountdown.textContent = "";
+        glowCountdown.classList.remove('visible');
+        glowCountdown.setAttribute('aria-hidden','true');
+        return;
+      }
+      glowCountdown.textContent = formatCountdown(msRemaining);
+      glowCountdown.classList.add('visible');
+      glowCountdown.setAttribute('aria-hidden','false');
     }
 
     function showGlowResume(show){
@@ -710,7 +850,6 @@
 
     function setCountdown(msg){
       countdownEl.textContent = msg;
-      glowCountdownEl.textContent = msg;
     }
 
     function setDebug(msg){
@@ -985,7 +1124,7 @@
       const m = Math.floor(s / 60);
       const sec = s % 60;
 
-      return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+      return `${m}:${String(sec).padStart(2, "0")}`;
     }
 
     function formatClockTime(sec){
@@ -2196,7 +2335,6 @@
       timingOp.playCalledAtMs = highResNowMs();
       await audio.play();
       timingOp.playResolvedAtMs = highResNowMs();
-      glowPerformanceStarted = true;
 
       crossfadeFromPreshowToMain();
 
@@ -2205,6 +2343,7 @@
       startAttempted = true;
 
       hideStartNow();
+      setGlowCountdown(null);
       setCountdown("");
       setStatus("Playing");
       setDebug(`${lastClockSyncDebug || "Clock prepared"} · output latency ${outputLatencySupported ? Math.round(outputLatencySec * 1000) + " ms" : "unavailable"} · warm-transfer bias ${Math.round(startupCalibrationBiasSec * 1000)} ms · output latency diagnostic only · v4.98 observes settled startup drift at 1.0/1.5/2.0 s and corrects 100% of a stable plateau once; no platform sniffing; generic controller stands down during observation and post-seek settling · drift excludes output latency · ${getNetworkResilienceText()} · Network changes ignored during performance.`);
@@ -2262,11 +2401,13 @@
 
         if(remaining <= 0){
           clearTimers();
+          setGlowCountdown(null);
           setCountdown("Starting now");
           tryAutomaticStart();
           return;
         }
 
+        setGlowCountdown(remaining);
         setCountdown(`Starting in ${formatCountdown(remaining)}`);
         setStatus(preshowPlaying ? "Pre-show playing…" : "Downloading…");
 
@@ -2277,6 +2418,7 @@
 
       countdownTimer = setTimeout(()=>{
         clearTimers();
+        setGlowCountdown(null);
         setCountdown("Starting now");
         tryAutomaticStart();
       }, Math.max(0, startTimeMs - syncedNowMs()));
@@ -2305,7 +2447,6 @@
       hideStartNow();
       waitingForManualStart = false;
       startAttempted = false;
-      glowPerformanceStarted = false;
       lastDriftSec = 0;
       lastHardSeekAtMs = 0;
       resetDriftStats();
@@ -2391,6 +2532,7 @@
           setStatus(preshowPlaying ? "Pre-show playing…" : "Downloading…");
         }else{
           stopPreshowImmediately();
+          setGlowCountdown(null);
           setCountdown("");
           setStatus("Tap Begin to join");
           waitingForManualStart = true;
@@ -2459,8 +2601,7 @@
     });
 
     playButton.addEventListener("click", ()=>{
-      // Keep fullscreen request synchronous with the trusted Begin tap.
-      requestGlowFullscreen();
+      // Diagnostic visual reset: keep Begin → canvas activation minimal.
       activateGlow();
       handlePrepare(false);
     });
@@ -2468,8 +2609,7 @@
       if(startNowMode === "resume"){
         handleResumeTap();
       }else{
-        // Manual/late Begin gets the same best-effort fullscreen treatment.
-        requestGlowFullscreen();
+        // Diagnostic visual reset: no fullscreen or motion permissions.
         activateGlow();
         handleManualStart();
       }
@@ -2528,6 +2668,8 @@
     });
 
     audio.addEventListener("playing", ()=>{
+      visualCurtainOpen = true;
+      setGlowCountdown(null);
       if(pendingTimingOperation){
         const op = pendingTimingOperation;
         op.playingEventAtMs = highResNowMs();
@@ -2562,6 +2704,7 @@
       waitingForManualStart = false;
       startAttempted = false;
 
+      setGlowCountdown(null);
       setCountdown("");
       setStatus("Playback ended");
       setDebug(lastClockSyncDebug || "");
