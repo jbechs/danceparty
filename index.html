@@ -246,7 +246,7 @@
   <main class="container">
     <div class="header">
       <h1>makeshift dance party</h1>
-      <div class="subtitle">crank all devices & turn off lights</div>
+      <div class="subtitle">crank your phones + turn off the lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -521,152 +521,176 @@
       glowCtx.fillRect(0,0,w,h);
     }
 
-    function drawLavaLamp(trackT, cue, beat, breath, clock, phase, energy, w, h){
-      // Base dance language: slow viscous lava-lamp bodies that pulse on the beat.
-      glowCtx.globalCompositeOperation='source-over';
-      glowCtx.fillStyle=hsl(cue.a+18, 70, 3 + 3*energy, 1);
-      glowCtx.fillRect(0,0,w,h);
-
-      const bodies=[];
-      for(let i=0;i<7;i++){
-        const speed=.06 + i*.012;
-        const wobble=clock*speed + phase*(.7+i*.13) + i*1.31;
-        const x=.5 + .34*Math.sin(wobble*1.13 + Math.sin(wobble*.41));
-        const y=.5 + .38*Math.cos(wobble*.91 + i*.7);
-        const rx=(.18 + .055*Math.sin(wobble*.73+i))*Math.max(w,h)*(1+.10*beat);
-        const ry=rx*(.62 + .20*Math.sin(wobble*.57+i*.9));
-        bodies.push({x:x*w,y:y*h,rx,ry,hue:i%2?cue.a:cue.b});
-      }
-
-      glowCtx.globalCompositeOperation='screen';
-      for(const b of bodies){
-        glowCtx.save();
-        glowCtx.translate(b.x,b.y);
-        glowCtx.scale(1,b.ry/b.rx);
-        const g=glowCtx.createRadialGradient(0,0,0,0,0,b.rx);
-        g.addColorStop(0,hsl(b.hue+18*beat,98,68,.90*energy));
-        g.addColorStop(.32,hsl(b.hue,96,56,.70*energy));
-        g.addColorStop(.72,hsl(b.hue-22,92,38,.22*energy));
-        g.addColorStop(1,hsl(b.hue,90,26,0));
-        glowCtx.fillStyle=g;
-        glowCtx.beginPath();
-        glowCtx.arc(0,0,b.rx,0,Math.PI*2);
-        glowCtx.fill();
-        glowCtx.restore();
-      }
-
-      // Viscous central merge/split field.
-      const cx=w*(.5+.08*Math.sin(clock*.09+phase));
-      const cy=h*(.5+.08*Math.cos(clock*.08+phase));
-      const r=Math.min(w,h)*(.22+.035*beat+.025*breath);
-      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,r*2.8);
-      core.addColorStop(0,`rgba(255,255,255,${.26+.20*beat})`);
-      core.addColorStop(.18,hsl(cue.a+32,92,74,.56));
-      core.addColorStop(.52,hsl(cue.b,100,58,.34));
-      core.addColorStop(1,hsl(cue.b,100,50,0));
-      glowCtx.fillStyle=core;
-      glowCtx.beginPath(); glowCtx.arc(cx,cy,r*2.8,0,Math.PI*2); glowCtx.fill();
-    }
-
-    function getMajorDropMode(trackT){
-      // Hand-picked large transformations based on the analyzed song structure.
-      const events=[
-        {t:31,d:5,m:'burst'},
-        {t:76,d:6,m:'tunnel'},
-        {t:100,d:6,m:'invert'},
-        {t:155,d:7,m:'burst'},
-        {t:174,d:8,m:'prism'}
+    function majorDropAt(t){
+      const drops = [
+        { t:76.0,  mode:'burst',  len:2.2 },
+        { t:100.0, mode:'rings',  len:2.6 },
+        { t:155.0, mode:'slice',  len:2.4 },
+        { t:184.0, mode:'white',  len:3.0 }
       ];
-      for(const e of events){ if(trackT>=e.t && trackT<e.t+e.d) return {mode:e.m,p:(trackT-e.t)/e.d}; }
+      for(const d of drops){
+        const age = t - d.t;
+        if(age >= 0 && age < d.len){
+          return { ...d, age, strength: Math.max(0, 1 - age / d.len) };
+        }
+      }
       return null;
     }
 
-    function drawMajorDrop(drop,cue,beat,clock,phase,w,h){
-      const p=drop.p;
-      if(drop.mode==='burst'){
-        glowCtx.globalCompositeOperation='screen';
-        glowCtx.save(); glowCtx.translate(w/2,h/2);
-        for(let i=0;i<26;i++){
-          const a=(i/26)*Math.PI*2 + clock*.05;
-          const len=Math.max(w,h)*(.18 + p*.75);
-          glowCtx.strokeStyle=hsl(cue.a+i*9,100,62,.26+.45*(1-p));
-          glowCtx.lineWidth=3+8*beat;
-          glowCtx.beginPath(); glowCtx.moveTo(Math.cos(a)*20,Math.sin(a)*20); glowCtx.lineTo(Math.cos(a)*len,Math.sin(a)*len); glowCtx.stroke();
+    function drawLavaBlob(x, y, rx, ry, rotation, hue, energy, alpha){
+      glowCtx.save();
+      glowCtx.translate(x, y);
+      glowCtx.rotate(rotation);
+      glowCtx.scale(rx, ry);
+
+      const g = glowCtx.createRadialGradient(0,0,0,0,0,1);
+      g.addColorStop(0, hsl(hue + 8, 100, 70, alpha));
+      g.addColorStop(.34, hsl(hue, 100, 56, alpha * .88));
+      g.addColorStop(.72, hsl(hue - 18, 94, 40, alpha * .44));
+      g.addColorStop(1, hsl(hue, 90, 25, 0));
+      glowCtx.fillStyle = g;
+      glowCtx.beginPath();
+      glowCtx.arc(0,0,1,0,Math.PI*2);
+      glowCtx.fill();
+      glowCtx.restore();
+    }
+
+    function drawDropTransformation(drop, w, h, hueA, hueB, hueC, trackT){
+      if(!drop) return;
+      const k = drop.strength;
+      const cx = w * .5;
+      const cy = h * .5;
+
+      if(drop.mode === 'burst'){
+        glowCtx.save();
+        glowCtx.globalAlpha = .35 + .45*k;
+        for(let i=0;i<22;i++){
+          const a = (Math.PI*2*i/22) + trackT*.22;
+          const inner = Math.min(w,h) * (.08 + .10*(1-k));
+          const outer = Math.max(w,h) * (.72 + .28*(1-k));
+          glowCtx.strokeStyle = hsl(i%2 ? hueA : hueB, 100, 68, .5 + .4*k);
+          glowCtx.lineWidth = 3 + 12*k;
+          glowCtx.beginPath();
+          glowCtx.moveTo(cx + Math.cos(a)*inner, cy + Math.sin(a)*inner);
+          glowCtx.lineTo(cx + Math.cos(a)*outer, cy + Math.sin(a)*outer);
+          glowCtx.stroke();
         }
         glowCtx.restore();
-      } else if(drop.mode==='tunnel'){
-        glowCtx.globalCompositeOperation='screen';
-        for(let i=0;i<10;i++){
-          const q=(i/10 + p*.9)%1;
-          const rr=Math.min(w,h)*(0.06 + q*.72);
-          glowCtx.strokeStyle=hsl(cue.b+i*14,100,64,.15+.55*(1-q));
-          glowCtx.lineWidth=2+10*(1-q);
-          glowCtx.beginPath(); glowCtx.arc(w/2,h/2,rr,0,Math.PI*2); glowCtx.stroke();
+      }else if(drop.mode === 'rings'){
+        glowCtx.save();
+        for(let i=0;i<9;i++){
+          const r = Math.min(w,h) * (.08 + i*.075 + (1-k)*.18);
+          glowCtx.strokeStyle = hsl(i%2 ? hueB : hueC, 100, 72, (.18 + .55*k) * (1-i*.055));
+          glowCtx.lineWidth = 2 + 7*k;
+          glowCtx.beginPath();
+          glowCtx.arc(cx,cy,r,0,Math.PI*2);
+          glowCtx.stroke();
         }
-      } else if(drop.mode==='invert'){
-        glowCtx.globalCompositeOperation='difference';
-        glowCtx.fillStyle=`rgba(255,255,255,${.45+.35*beat})`;
-        glowCtx.fillRect(0,0,w,h);
-      } else if(drop.mode==='prism'){
-        glowCtx.globalCompositeOperation='screen';
-        const bands=8;
+        glowCtx.restore();
+      }else if(drop.mode === 'slice'){
+        glowCtx.save();
+        glowCtx.translate(cx,cy);
+        glowCtx.rotate(-.16);
+        const bands = 9;
+        const bh = h / bands;
         for(let i=0;i<bands;i++){
-          const x=(i/bands)*w;
-          const ww=w/bands+2;
-          glowCtx.fillStyle=hsl(cue.a+i*38+clock*18,100,55,.18+.42*beat);
-          glowCtx.fillRect(x,0,ww,h);
+          glowCtx.fillStyle = hsl([hueA,hueB,hueC][i%3] + i*5, 100, 58 + (i%2)*10, .16 + .48*k);
+          const offset = Math.sin(i*1.7 + trackT*4) * w * .09 * k;
+          glowCtx.fillRect(-w*.7 + offset, -h*.55 + i*bh, w*1.4, bh*.58);
         }
+        glowCtx.restore();
+      }else if(drop.mode === 'white'){
+        const flash = Math.max(0, Math.sin(Math.min(1, drop.age/.7) * Math.PI));
+        glowCtx.fillStyle = `rgba(255,255,255,${(.18 + .62*flash) * k})`;
+        glowCtx.fillRect(0,0,w,h);
+        glowCtx.strokeStyle = hsl(hueA+180, 100, 55, .5*k);
+        glowCtx.lineWidth = 10 + 22*k;
+        glowCtx.strokeRect(-8,-8,w+16,h+16);
       }
     }
 
     function drawGlow(nowMs){
       if(!glowActive) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = Math.max(1, window.innerWidth);
+      const h = Math.max(1, window.innerHeight);
 
       const inPreshow = preshowPlaying && audio.paused && scheduledAnchorMs != null && syncedNowMs() < scheduledAnchorMs;
       if(inPreshow){
         drawPreshowWind(nowMs, w, h);
-        glowFrame=requestAnimationFrame(drawGlow);
+        glowFrame = requestAnimationFrame(drawGlow);
         return;
       }
 
       const trackT = glowTrackTime();
       const cue = cueAt(trackT);
-      const beatState = beatStateAt(trackT);
+      const bs = beatStateAt(trackT);
       const clock = nowMs / 1000;
       const phase = glowVariant * Math.PI * 2;
-      const beat = beatState.pulse;
-      const phraseHit = beatState.phraseHit;
-      const transitionHit = sectionTransitionStrength(trackT);
-      const breath = .5 + .5 * Math.sin(clock * .44 + phase);
-      const energy = cue.e * (.88 + beat * .12);
-
+      const beat = bs.pulse;
+      const phraseHit = bs.phraseHit;
+      const energy = cue.e * (.88 + .16*beat);
       const hueA = glowPalette.a + cue.hueShift;
-      const hueB = glowPalette.b + cue.hueShift * .55;
-      const hueC = glowPalette.c - cue.hueShift * .30;
+      const hueB = glowPalette.b + cue.hueShift*.55;
+      const hueC = glowPalette.c - cue.hueShift*.30;
+      const tx = glowTiltX * w * .10;
+      const ty = glowTiltY * h * .08;
 
-      drawLavaLamp(trackT, cue, beat, breath, clock, phase, energy, w, h);
-
-      const majorDrop=getMajorDropMode(trackT);
-      if(majorDrop){
-        drawMajorDrop(majorDrop,cue,beat,clock,phase,w,h);
-      }
-
-      // Whole-screen pulse on every strong beat: subtle normally, emphatic during peaks.
-      glowCtx.globalCompositeOperation='screen';
-      glowCtx.fillStyle=hsl(cue.a+40,100,72,.025 + .07*beat*energy);
+      // Stable dark base with enough tribe color to keep browser chrome visually submerged.
+      const bg = glowCtx.createLinearGradient(0,0,w,h);
+      bg.addColorStop(0, hsl(hueC, 78, 6 + 4*energy, 1));
+      bg.addColorStop(1, hsl(hueA, 86, 4 + 3*energy, 1));
+      glowCtx.fillStyle = bg;
       glowCtx.fillRect(0,0,w,h);
 
-      // White-out swell in the last six seconds of the 3:22 track.
-      if(trackT >= 196 && trackT < 202){
-        const finale = Math.min(1, (trackT-196)/6);
-        glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.30})`;
+      // Lava-lamp baseline: large elongated bodies that slowly shear past each other.
+      // The beat expands them rather than simply flashing brightness.
+      const lava = [
+        { x:.28, y:.34, rx:.42, ry:.25, sp:.11, off:0.0, hue:hueA },
+        { x:.69, y:.29, rx:.38, ry:.30, sp:.085,off:1.7, hue:hueB },
+        { x:.35, y:.73, rx:.46, ry:.27, sp:.072,off:3.2, hue:hueC },
+        { x:.74, y:.72, rx:.34, ry:.22, sp:.125,off:4.6, hue:hueA+35 },
+        { x:.52, y:.52, rx:.30, ry:.42, sp:.058,off:5.8, hue:hueB-28 }
+      ];
+
+      for(let i=0;i<lava.length;i++){
+        const b = lava[i];
+        const driftX = Math.sin(clock*b.sp*2.1 + phase + b.off) * w * .15;
+        const driftY = Math.cos(clock*b.sp*1.7 + phase*.7 + b.off) * h * .12;
+        const beatGrow = 1 + beat * (.10 + i*.012);
+        const breathe = 1 + .045*Math.sin(clock*.34 + b.off + phase);
+        const rx = Math.max(w,h) * b.rx * beatGrow * breathe;
+        const ry = Math.max(w,h) * b.ry * (1 + beat*.055) * breathe;
+        const rot = .30*Math.sin(clock*b.sp + b.off + phase);
+        drawLavaBlob(b.x*w + driftX + tx, b.y*h + driftY + ty, rx, ry, rot, b.hue, energy, .50 + .28*energy);
+      }
+
+      // Soft liquid membrane through the center, pulsing on every beat.
+      const coreX = w*.5 + tx*.35 + Math.sin(clock*.19+phase)*w*.04;
+      const coreY = h*.5 + ty*.35 + Math.cos(clock*.17+phase)*h*.035;
+      const coreR = Math.min(w,h) * (.19 + .045*beat);
+      const core = glowCtx.createRadialGradient(coreX,coreY,0,coreX,coreY,coreR*2.8);
+      core.addColorStop(0, `rgba(255,255,255,${.14 + .16*beat})`);
+      core.addColorStop(.25, hsl(hueB, 100, 66, .24 + .18*energy));
+      core.addColorStop(1, hsl(hueA, 100, 45, 0));
+      glowCtx.fillStyle = core;
+      glowCtx.fillRect(coreX-coreR*3, coreY-coreR*3, coreR*6, coreR*6);
+
+      // Phrase accents stay subtle so the major drops remain exceptional.
+      if(phraseHit > .03){
+        glowCtx.fillStyle = hsl(hueA+18, 100, 62, phraseHit*.10);
         glowCtx.fillRect(0,0,w,h);
       }
 
-      glowFrame=requestAnimationFrame(drawGlow);
+      drawDropTransformation(majorDropAt(trackT), w, h, hueA, hueB, hueC, trackT);
+
+      // Final release.
+      if(trackT >= 196 && trackT < 202.64){
+        const finale = Math.min(1, (trackT-196)/6.64);
+        glowCtx.fillStyle = `rgba(255,255,255,${Math.sin(finale*Math.PI)*.24})`;
+        glowCtx.fillRect(0,0,w,h);
+      }
+
+      glowFrame = requestAnimationFrame(drawGlow);
     }
 
     function activateGlow(){
