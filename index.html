@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>common</title>
+  <title>dance party</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -149,14 +149,78 @@
     input[type="datetime-local"]::-webkit-calendar-picker-indicator{
       filter:invert(1);
     }
+
+
+    /* COMMON GLOW variation: full-screen luminous crowd object.
+       Presentation-only layer: playback/sync logic remains unchanged. */
+    #glowScreen{
+      position:fixed;
+      inset:0;
+      z-index:1000;
+      overflow:hidden;
+      background:#020207;
+      opacity:0;
+      visibility:hidden;
+      transition:opacity 700ms ease;
+      touch-action:manipulation;
+      user-select:none;
+      -webkit-user-select:none;
+    }
+
+    #glowScreen.active{
+      opacity:1;
+      visibility:visible;
+    }
+
+    #glowCanvas{
+      width:100%;
+      height:100%;
+      display:block;
+      filter:saturate(1.18) contrast(1.05);
+    }
+
+    #glowVignette{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      background:radial-gradient(circle at 50% 47%, transparent 0 30%, rgba(0,0,0,.10) 58%, rgba(0,0,0,.48) 100%);
+      mix-blend-mode:multiply;
+    }
+
+    #glowResume{
+      position:absolute;
+      left:50%;
+      bottom:max(8vh,32px);
+      transform:translateX(-50%);
+      z-index:2;
+      width:min(78vw,320px);
+      padding:15px 18px;
+      border:1px solid rgba(255,255,255,.42);
+      border-radius:999px;
+      color:white;
+      background:rgba(0,0,0,.42);
+      backdrop-filter:blur(12px);
+      -webkit-backdrop-filter:blur(12px);
+      box-shadow:0 0 30px rgba(255,255,255,.12);
+    }
+
+    #glowResume.hidden{ display:none; }
+
   </style>
 </head>
 
 <body>
+
+  <div id="glowScreen" aria-hidden="true">
+    <canvas id="glowCanvas"></canvas>
+    <div id="glowVignette"></div>
+    <button id="glowResume" class="hidden" type="button">Tap to resume sound</button>
+  </div>
+
   <main class="container">
     <div class="header">
       <h1>dance party</h1>
-      <div class="subtitle">use every phone you have and crank the volume</div>
+      <div class="subtitle">crank all of your phones + turn off the lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -180,8 +244,8 @@
   </main>
 
   <script> 
-    const AUDIO_URL = "https://eggtooth.xyz/Life.mp3";
-    const PRESHOW_AUDIO_URL = "https://eggtooth.xyz/quietWind.mp3";
+    const AUDIO_URL = "https://eggtooth.xyz/common2audience.mp3";
+    const PRESHOW_AUDIO_URL = "https://eggtooth.xyz/preshow.mp3";
     const TIME_SERVER_URL = "https://sync1.jbechs.workers.dev/";
 
     const audio = document.getElementById("audio");
@@ -197,6 +261,186 @@
     const driftStatsEl = document.getElementById("driftStats");
     const timingProbeEl = document.getElementById("timingProbe");
     const debugEl = document.getElementById("debug");
+
+    // --- COMMON GLOW presentation layer ---------------------------------
+    // A local canvas animation that turns every participant phone into a
+    // luminous object. It never drives audio or modifies the show clock.
+    const glowScreen = document.getElementById("glowScreen");
+    const glowCanvas = document.getElementById("glowCanvas");
+    const glowCtx = glowCanvas.getContext("2d", { alpha:false });
+    const glowResume = document.getElementById("glowResume");
+    let glowActive = false;
+    let glowFrame = null;
+    let glowTapTimes = [];
+
+    // A tiny per-device phase difference keeps a crowd visually alive while
+    // cue changes remain synchronized. Session-scoped; no storage or identity.
+    const glowVariant = Math.random();
+
+    const GLOW_CUES = [
+      // time, hue A, hue B, energy, pulse, label
+      { t:0,   a:195, b:315, e:.72, p:.70 }, // cyan / magenta invitation
+      { t:24,  a:325, b:24,  e:.88, p:1.00 }, // hot pink / orange
+      { t:52,  a:92,  b:205, e:.78, p:1.25 }, // acid green / electric blue
+      { t:82,  a:272, b:332, e:.66, p:.82 }, // violet suspension
+      { t:112, a:18,  b:350, e:.92, p:1.35 }, // amber / red drive
+      { t:145, a:184, b:226, e:.73, p:.95 }, // cool cyan opening
+      { t:174, a:300, b:70,  e:1.00,p:1.65 }, // peak: prismatic
+      { t:196, a:205, b:330, e:.58, p:.55 }, // final bloom / release
+      { t:202, a:250, b:300, e:.25, p:.30 }
+    ];
+
+    function resizeGlow(){
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(1, window.innerWidth);
+      const h = Math.max(1, window.innerHeight);
+      glowCanvas.width = Math.round(w * dpr);
+      glowCanvas.height = Math.round(h * dpr);
+      glowCanvas.style.width = `${w}px`;
+      glowCanvas.style.height = `${h}px`;
+      glowCtx.setTransform(dpr,0,0,dpr,0,0);
+    }
+
+    function glowTrackTime(){
+      // During performance the media playhead is the visual clock. Before an
+      // on-time scheduled curtain, show a slow ambient field instead.
+      if(!audio.paused && isFinite(audio.currentTime)) return audio.currentTime;
+      if(scheduledAnchorMs != null && performanceClockFrozen){
+        const expected = getExpectedTrackTimeSec();
+        if(expected != null && expected >= 0) return expected;
+      }
+      return 0;
+    }
+
+    function cueAt(t){
+      let c = GLOW_CUES[0];
+      for(let i=1;i<GLOW_CUES.length;i++){
+        if(t < GLOW_CUES[i].t) break;
+        c = GLOW_CUES[i];
+      }
+      return c;
+    }
+
+    function hsl(h,s,l,a=1){
+      return `hsla(${((h%360)+360)%360} ${s}% ${l}% / ${a})`;
+    }
+
+    function drawGlow(nowMs){
+      if(!glowActive) return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const trackT = glowTrackTime();
+      const cue = cueAt(trackT);
+      const clock = nowMs / 1000;
+      const phase = glowVariant * Math.PI * 2;
+      const beat = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p + phase * .16);
+      const breath = .5 + .5 * Math.sin(clock * .58 + phase);
+      const energy = cue.e * (.86 + beat * .14);
+
+      glowCtx.globalCompositeOperation = 'source-over';
+      glowCtx.fillStyle = hsl(cue.a + 35, 65, 3 + 4*energy, 1);
+      glowCtx.fillRect(0,0,w,h);
+
+      // Large drifting color bodies. All devices share cue colors/timing, while
+      // phase and geometry differ subtly so a crowd reads as a constellation.
+      const blobs = [
+        { hue:cue.a,      x:.50 + .15*Math.sin(clock*.31 + phase),     y:.43 + .12*Math.cos(clock*.27 + phase*.7),  r:.54 },
+        { hue:cue.b,      x:.36 + .20*Math.cos(clock*.23 + phase*1.4), y:.58 + .14*Math.sin(clock*.33 + phase*.4),  r:.47 },
+        { hue:cue.a+125,  x:.67 + .16*Math.sin(clock*.19 + phase*2.1), y:.61 + .17*Math.cos(clock*.21 + phase*1.2), r:.38 }
+      ];
+
+      glowCtx.globalCompositeOperation = 'screen';
+      for(const b of blobs){
+        const x=b.x*w, y=b.y*h, r=b.r*Math.max(w,h)*( .88 + .10*breath );
+        const g=glowCtx.createRadialGradient(x,y,0,x,y,r);
+        g.addColorStop(0, hsl(b.hue + 18*beat, 98, 64, .88*energy));
+        g.addColorStop(.22, hsl(b.hue, 96, 54, .62*energy));
+        g.addColorStop(.58, hsl(b.hue-18, 94, 42, .22*energy));
+        g.addColorStop(1, hsl(b.hue, 90, 24, 0));
+        glowCtx.fillStyle=g;
+        glowCtx.fillRect(x-r,y-r,r*2,r*2);
+      }
+
+      // Central 'living object': a soft orb with a heartbeat-like expansion.
+      const cx=w*(.50 + .025*Math.sin(clock*.41+phase));
+      const cy=h*(.50 + .020*Math.cos(clock*.37+phase));
+      const rr=Math.min(w,h)*(.18 + .035*beat + .018*breath);
+      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,rr*2.5);
+      core.addColorStop(0, `rgba(255,255,255,${.72 + .18*beat})`);
+      core.addColorStop(.12, hsl(cue.a + 45, 90, 80, .62));
+      core.addColorStop(.42, hsl(cue.b, 100, 58, .32));
+      core.addColorStop(1, hsl(cue.b, 100, 45, 0));
+      glowCtx.fillStyle=core;
+      glowCtx.beginPath();
+      glowCtx.arc(cx,cy,rr*2.5,0,Math.PI*2);
+      glowCtx.fill();
+
+      // A few orbiting sparks read especially well when phones are raised.
+      for(let i=0;i<5;i++){
+        const a=clock*(.35+.055*i)+phase+i*1.256;
+        const rad=Math.min(w,h)*(.24+.035*i);
+        const sx=cx+Math.cos(a)*rad;
+        const sy=cy+Math.sin(a*1.07)*rad*.72;
+        const sr=2.5 + 3.5*energy + 2*beat;
+        glowCtx.fillStyle=hsl(cue.a + i*48, 100, 82, .45+.35*energy);
+        glowCtx.beginPath();
+        glowCtx.arc(sx,sy,sr,0,Math.PI*2);
+        glowCtx.fill();
+      }
+
+      // White-out swell in the last six seconds of the 3:22 test track.
+      if(trackT >= 196 && trackT < 202){
+        const finale = Math.min(1, (trackT-196)/6);
+        glowCtx.globalCompositeOperation='screen';
+        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.28})`;
+        glowCtx.fillRect(0,0,w,h);
+      }
+
+      glowFrame=requestAnimationFrame(drawGlow);
+    }
+
+    function activateGlow(){
+      if(glowActive) return;
+      glowActive=true;
+      resizeGlow();
+      glowScreen.classList.add('active');
+      glowScreen.setAttribute('aria-hidden','false');
+      glowFrame=requestAnimationFrame(drawGlow);
+    }
+
+    function deactivateGlow(){
+      glowActive=false;
+      if(glowFrame){ cancelAnimationFrame(glowFrame); glowFrame=null; }
+      glowScreen.classList.remove('active');
+      glowScreen.setAttribute('aria-hidden','true');
+      glowResume.classList.add('hidden');
+    }
+
+    function showGlowResume(show){
+      glowResume.classList.toggle('hidden', !show);
+    }
+
+    window.addEventListener('resize', ()=>{ if(glowActive) resizeGlow(); });
+
+    // Emergency/test escape: five quick taps anywhere on the glow reveals the
+    // normal player again. Deliberately obscure enough not to happen in use.
+    glowScreen.addEventListener('pointerup', (ev)=>{
+      if(ev.target === glowResume) return;
+      const now=performance.now();
+      glowTapTimes=glowTapTimes.filter(t=>now-t<3000);
+      glowTapTimes.push(now);
+      if(glowTapTimes.length>=5){ glowTapTimes=[]; deactivateGlow(); }
+    });
+
+    glowResume.addEventListener('click', ()=>{
+      showGlowResume(false);
+      if(startNowMode === "resume"){
+        handleResumeTap();
+      }else{
+        handleManualStart();
+      }
+    });
+    // ---------------------------------------------------------------------
 
     let countdownFrame = null;
     let countdownTimer = null;
@@ -577,10 +821,15 @@
       startNowMode = mode;
       startNowButton.textContent = mode === "resume" ? "Resume" : "Begin";
       startNowButton.classList.remove("hidden");
+      if(glowActive){
+        glowResume.textContent = mode === "resume" ? "Tap to resume sound" : "Begin";
+        showGlowResume(true);
+      }
     }
 
     function hideStartNow(){
       startNowButton.classList.add("hidden");
+      showGlowResume(false);
       if(startNowMode !== "resume") startNowButton.textContent = "Begin";
     }
 
@@ -1614,6 +1863,7 @@
       setStatus(`${detail} — tap Resume`);
       setDebug(`${lastClockSyncDebug || "Clock prepared"} · Performance clock preserved; Resume will rejoin the live show position.`);
       updateDriftStats();
+      if(glowActive) showGlowResume(true);
     }
 
     async function recoverInterruptedPlayback(fromUserGesture = false){
@@ -1661,6 +1911,7 @@
         }
 
         setStatus("Playing");
+        showGlowResume(false);
         setDebug(`${lastClockSyncDebug || "Clock prepared"} · Recovered from interruption at ${formatClockTime(audio.currentTime)}; show clock preserved.`);
         updateTransport();
         updateDriftStats();
@@ -2088,6 +2339,7 @@
 
         setStatus("Preparation failed — tap Begin to retry");
         setDebug(`Preparation failed at ${failedStage}: ${err.message}`);
+        deactivateGlow();
       }finally{
         clearPreparationStatusTimer();
         if(!delegatedRetry && !startAttempted){
@@ -2126,7 +2378,10 @@
       diagnosticsToggle.textContent = "info";
     });
 
-    playButton.addEventListener("click", ()=>handlePrepare(false));
+    playButton.addEventListener("click", ()=>{
+      activateGlow();
+      handlePrepare(false);
+    });
     startNowButton.addEventListener("click", ()=>{
       if(startNowMode === "resume"){
         handleResumeTap();
@@ -2211,6 +2466,7 @@
     audio.addEventListener("pause", handleUnexpectedPerformancePause);
 
     audio.addEventListener("ended", ()=>{
+      deactivateGlow();
       clearTimers();
       clearPlaybackMonitors();
       clearCrossfade();
@@ -2273,3 +2529,4 @@
   </script>
 </body>
 </html>
+
