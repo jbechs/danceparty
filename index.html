@@ -1,0 +1,2275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>common</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <style>
+    body{
+      margin:0;
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      background:#111;
+      color:#fff;
+      font-family:'Inter', system-ui, sans-serif;
+    }
+
+    .container{
+      width:min(90vw,420px);
+      display:grid;
+      gap:16px;
+      text-align:center;
+    }
+
+    .header{
+      display:grid;
+      gap:6px;
+      margin-bottom:28px;
+    }
+
+    h1{
+      margin:0;
+      font-size:1.8rem;
+      letter-spacing:.04em;
+      font-weight:600;
+    }
+
+    .subtitle{
+      font-size:.9rem;
+      color:#aaa;
+    }
+
+    label{
+      font-size:.95rem;
+    }
+
+    input, button{
+      font-size:1rem;
+      padding:12px;
+      border-radius:8px;
+      border:none;
+    }
+
+    input{
+      background:#222;
+      color:#fff;
+    }
+
+    button{
+      background:#fff;
+      color:#111;
+      font-weight:600;
+      cursor:pointer;
+      min-width:140px;
+      justify-self:center;
+    }
+
+    button:disabled{
+      cursor:default;
+    }
+
+    .startNow{
+      font-size:1.15rem;
+      padding:16px;
+    }
+
+    .status{
+      min-height:1.4em;
+      color:#bbb;
+    }
+
+    .countdown{
+      min-height:1.4em;
+      font-size:1.2rem;
+      font-weight:600;
+    }
+
+    .transport{
+      min-height:1.4em;
+      font-size:1rem;
+      color:#fff;
+      font-variant-numeric:tabular-nums;
+    }
+
+    .debug{
+      font-size:.82rem;
+      color:#777;
+      min-height:1.2em;
+      word-break:break-word;
+    }
+
+    .diagnosticsToggle{
+      width:100%;
+      min-width:0;
+      padding:8px 12px;
+      border-radius:6px;
+      background:#131313;
+      color:#242424;
+      font-size:.72rem;
+      font-weight:400;
+      letter-spacing:.03em;
+      justify-self:stretch;
+    }
+
+    .diagnosticsPanel{
+      display:grid;
+      gap:6px;
+    }
+
+    .timingProbe{
+      font-size:.76rem;
+      color:#666;
+      line-height:1.4;
+      word-break:break-word;
+    }
+
+    .diagnosticsPanel.hidden{
+      display:none;
+    }
+
+    .hidden{
+      display:none;
+    }
+
+    audio{
+      width:100%;
+    }
+
+    input[type="datetime-local"]{
+      color:#fff;
+      background:#222;
+    }
+
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+      filter:invert(1);
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <div class="header">
+      <h1>common</h1>
+      <div class="subtitle">v5</div>
+    </div>
+
+    <label for="startTime">Start Time</label>
+    <input id="startTime" type="datetime-local" step="60" />
+
+    <button id="playButton">Begin</button>
+    <button id="startNowButton" class="startNow hidden">Begin</button>
+
+    <div id="countdown" class="countdown"></div>
+    <div id="status" class="status">Ready.</div>
+    <div id="transport" class="transport">00:00 / 00:00 · drift 0 ms</div>
+    <button id="diagnosticsToggle" class="diagnosticsToggle" type="button" aria-expanded="false">info</button>
+    <div id="diagnosticsPanel" class="diagnosticsPanel hidden">
+      <div id="driftStats" class="debug">Initial — · Avg — · Best — · Worst —<br>Hard seeks 0 · Last —</div>
+      <div id="timingProbe" class="timingProbe">Timing probe — waiting for playback</div>
+      <div id="debug" class="debug"></div>
+    </div>
+
+    <audio id="audio" preload="auto" playsinline class="hidden"></audio>
+    <audio id="preshowAudio" preload="auto" playsinline loop class="hidden"></audio>
+  </main>
+
+  <script> 
+    const AUDIO_URL = "https://eggtooth.xyz/Life.mp3";
+    const PRESHOW_AUDIO_URL = "https://eggtooth.xyz/quietWind.mp3";
+    const TIME_SERVER_URL = "https://sync1.jbechs.workers.dev/";
+
+    const audio = document.getElementById("audio");
+    const preshowAudio = document.getElementById("preshowAudio");
+    const playButton = document.getElementById("playButton");
+    const startNowButton = document.getElementById("startNowButton");
+    const startInput = document.getElementById("startTime");
+    const statusEl = document.getElementById("status");
+    const countdownEl = document.getElementById("countdown");
+    const diagnosticsToggle = document.getElementById("diagnosticsToggle");
+    const diagnosticsPanel = document.getElementById("diagnosticsPanel");
+    const transportEl = document.getElementById("transport");
+    const driftStatsEl = document.getElementById("driftStats");
+    const timingProbeEl = document.getElementById("timingProbe");
+    const debugEl = document.getElementById("debug");
+
+    let countdownFrame = null;
+    let countdownTimer = null;
+    let readinessInterval = null;
+    let driftInterval = null;
+    let transportInterval = null;
+    let crossfadeInterval = null;
+
+    let scheduledAnchorMs = null;
+    let sourceAssigned = false;
+    let preshowSourceAssigned = false;
+    let preshowPlaying = false;
+    let waitingForManualStart = false;
+    let startAttempted = false;
+    let lastDriftSec = 0;
+    let lastHardSeekAtMs = 0;
+    let initialDriftSec = null;
+    let driftSampleCount = 0;
+    let driftAbsSumSec = 0;
+    let bestAbsDriftSec = null;
+    let worstAbsDriftSec = null;
+    let hardSeekCount = 0;
+    let lastSeekBeforeSec = null;
+    let lastSeekAfterSec = null;
+    let lastSuccessfulHardSeekAtMs = null;
+    let lastSeekAfter1Sec = null;
+    let lastSeekAfter3Sec = null;
+    let lastRecoveryBiasSec = null;
+    let lastRecoveryBiasMode = "—";
+    let startupObservationToken = 0;
+    let startupObservationActive = false;
+    let startupObservedCorrectionState = "—";
+    let startupObservedCorrectionBiasSec = null;
+    let startupObservedCorrectionSamplesMs = [];
+    let seekSettlingToken = 0;
+    let samplesUnder150 = 0;
+    let samplesUnder250 = 0;
+    let samplesUnderThreshold = 0;
+    let samplesAtOrAboveThreshold = 0;
+    let sustainedBadStreak = 0;
+    let serverClockOffsetMs = 0;
+    let lastClockSyncDebug = "";
+    let performanceClockFrozen = false;
+    let frozenSyncedEpochMs = null;
+    let frozenPerformanceNowMs = null;
+    let networkWasOnlineAtCurtain = null;
+    let startNowMode = "begin";
+    let interruptionRecoveryTimer = null;
+    let interruptionRecoveryInFlight = false;
+    let interruptionAwaitingTap = false;
+    let interruptionCount = 0;
+    let interruptionAutoRecoveries = 0;
+    let interruptionManualRecoveries = 0;
+
+    let timingOperationId = 0;
+    let pendingTimingOperation = null;
+    let latestStartTiming = null;
+    let latestRecoveryTiming = null;
+
+    // Preparation watchdog/diagnostics. Keep loading failures bounded and visible,
+    // especially on iOS where media play() can remain pending on weak networks.
+    let preparationStatusTimer = null;
+    let preparationStageStartedAtMs = null;
+    let preparationAttemptCount = 0;
+    let preparationAttemptStartedAtMs = null;
+    let currentPreparationStage = null;
+    let lastPreparationOutcome = null;
+
+    // v4.3.2: Safari/iOS can require AudioContext.resume() to be INVOKED
+    // synchronously inside a trusted user gesture. We therefore launch the
+    // output-path probe at the very beginning of the audience's Begin tap,
+    // before clock/metadata awaits can consume user activation.
+    let gestureOutputProbePromise = null;
+
+    let startupCalibrationBiasSec = 0;
+    let startupCalibrationMeasured = false;
+    let startupCalibrationRealElapsedMs = null;
+    let startupCalibrationMediaElapsedMs = null;
+    let startupPipelineLossSec = 0;
+    let startupCalibrationPasses = [];
+
+    // Output-path awareness. We do not identify AirPods/Bluetooth/etc. by name.
+    // When the browser exposes Web Audio outputLatency, we use that estimate
+    // as the acoustic delay between the browser handing off audio and sound
+    // actually emerging from the selected output device.
+    let outputLatencyContext = null;
+    let outputLatencySec = 0;
+    let outputLatencySupported = false;
+
+    const START_BUFFER_SEC = 15;
+    const LATE_JOIN_BUFFER_SEC = 1.0;
+    const SEEK_PLAYABLE_TIMEOUT_MS = 12000;
+
+    const READINESS_CHECK_MS = 500;
+    const DRIFT_CHECK_MS = 1000;
+    const TRANSPORT_UPDATE_MS = 1000;
+
+    // Production philosophy (Aug 2026): minimum intervention + network indifference.
+    // Normal media URL remains intact; the browser is allowed to warm its own media cache/buffer.
+    // 350 ms remains the preferred operating band for diagnostics.
+    // A hard seek now requires a sustained poor state: >=420 ms for
+    // three consecutive 1-second checks, plus the existing cooldown.
+    // After six successful hard seeks, the controller concedes for the rest of the run
+    // and prioritizes uninterrupted playback over further correction attempts.
+    const PREFERRED_DRIFT_BAND_SEC = 0.35;
+    const HARD_SEEK_TRIGGER_SEC = 0.42;
+    const HARD_SEEK_REQUIRED_CHECKS = 3;
+    const HARD_SEEK_COOLDOWN_MS = 8000;
+    const HARD_SEEK_MAX_COUNT = 6;
+    // EXPERIMENT: pre-curtain device/run calibration.
+    // No platform sniffing and no universal fixed bias. During preparation,
+    // the main track briefly runs muted and measures how much media time is
+    // lost while the playback pipeline settles. The real start then aims ahead
+    // by that measured amount.
+    const START_CALIBRATION_SAMPLE_MS = 1200;
+    const START_CALIBRATION_MAX_BIAS_SEC = 0.75;
+    const OUTPUT_LATENCY_MAX_SEC = 1.5;
+    // v4.5: an asynchronous media seek can itself take long enough that the
+    // canonical show target becomes stale before playback begins. After each
+    // startup seek, re-check the live show clock and, if necessary, retarget.
+    // Keep this bounded so a pathological browser can never trap us in a seek loop.
+    const START_TARGET_STALE_SEC = 0.25;
+    const START_RETARGET_MAX_COUNT = 2;
+
+    // v4.6 foundation: if the first sustained bad state appears immediately
+    // after startup, treat the observed drift itself as an empirical estimate
+    // of the newly-established playback-path lag. Use that measured lag once
+    // as the recovery seek bias, rather than the browser's outputLatency.
+    // This stays platform-agnostic and bounded.
+    const STARTUP_SETTLING_RECOVERY_WINDOW_MS = 10000;
+    const OBSERVED_RECOVERY_MAX_BIAS_SEC = 0.75;
+
+    // v4.98: platform-agnostic observed-startup correction experiment.
+    // v4.9 showed that outputLatency is useful as a
+    // diagnostic but does not reliably predict the settled main-audio startup
+    // offset. Instead, let the actual media path establish itself, sample the
+    // settled startup plateau, and correct that observed offset exactly once.
+    //
+    // Samples begin at 1 s because the first ~500 ms can be a moving transition.
+    // While this observation is active, the generic sustained-drift controller
+    // stands down so it cannot race the one-shot startup correction.
+    const STARTUP_OBSERVATION_DELAYS_MS = [1000, 1500, 2000];
+    const STARTUP_OBSERVATION_MAX_SPREAD_SEC = 0.06;
+    const STARTUP_OBSERVATION_MIN_BIAS_SEC = 0.08;
+    // v4.98 experiment: correct 100% of a stable observed startup plateau.
+    // Probe full correction after v4.97 at 95% repeatedly left a small positive
+    // residual on the current Android speaker/headphone paths.
+    const STARTUP_OBSERVED_CORRECTION_FACTOR = 1.00;
+    const POST_SEEK_SETTLING_GRACE_MS = 1500;
+    const NORMAL_RATE = 1.0;
+    const INTERRUPTION_RECOVERY_DELAY_MS = 1800;
+    const INTERRUPTION_VERIFY_DELAY_MS = 500;
+
+    const PRESHOW_VOLUME = 1.0;
+    const MAIN_VOLUME = 1.0;
+    const CROSSFADE_MS = 1000;
+    const FADE_STEP_MS = 50;
+
+    function highResNowMs(){
+      return performance.timeOrigin + performance.now();
+    }
+
+    function syncedNowMs(){
+      if(performanceClockFrozen && frozenSyncedEpochMs != null && frozenPerformanceNowMs != null){
+        return frozenSyncedEpochMs + (performance.now() - frozenPerformanceNowMs);
+      }
+
+      return highResNowMs() + serverClockOffsetMs;
+    }
+
+    function freezePerformanceClock(){
+      if(performanceClockFrozen) return;
+
+      frozenSyncedEpochMs = highResNowMs() + serverClockOffsetMs;
+      frozenPerformanceNowMs = performance.now();
+      performanceClockFrozen = true;
+      networkWasOnlineAtCurtain = navigator.onLine;
+    }
+
+    function unfreezePerformanceClock(){
+      performanceClockFrozen = false;
+      frozenSyncedEpochMs = null;
+      frozenPerformanceNowMs = null;
+      networkWasOnlineAtCurtain = null;
+    }
+
+    function setStatus(msg){
+      statusEl.textContent = msg;
+    }
+
+    function setCountdown(msg){
+      countdownEl.textContent = msg;
+    }
+
+    function setDebug(msg){
+      debugEl.textContent = msg || "";
+    }
+
+    function msBetween(a, b){
+      if(a == null || b == null) return null;
+      return Math.round(b - a);
+    }
+
+    function fmtMs(value){
+      return value == null ? "—" : `${value} ms`;
+    }
+
+    function beginTimingOperation(kind){
+      const now = highResNowMs();
+      const op = {
+        id: ++timingOperationId,
+        kind,
+        calculatedAtMs: now,
+        seekAssignedAtMs: null,
+        seekedAtMs: null,
+        playCalledAtMs: null,
+        playResolvedAtMs: null,
+        playingEventAtMs: null,
+        expectedAtCalculationSec: getExpectedTrackTimeSec(),
+        mediaAtCalculationSec: audio.currentTime || 0,
+        residualAtPlayingSec: null,
+        startupRetargetCount: 0,
+        startupMaxTargetAgeMs: 0,
+        settlingSamplesMs: {}
+      };
+      pendingTimingOperation = op;
+      updateTimingProbe();
+      return op;
+    }
+
+    function finishTimingOperation(op){
+      if(!op) return;
+      if(op.kind === "start"){
+        latestStartTiming = op;
+      }else if(op.kind === "recovery"){
+        latestRecoveryTiming = op;
+      }
+      if(pendingTimingOperation && pendingTimingOperation.id === op.id){
+        pendingTimingOperation = null;
+      }
+      updateTimingProbe();
+    }
+
+    function timingSummary(label, op){
+      if(!op) return `${label}: —`;
+
+      const calcToSeek = msBetween(op.calculatedAtMs, op.seekAssignedAtMs);
+      const seekWait = msBetween(op.seekAssignedAtMs, op.seekedAtMs);
+      const seekToPlay = msBetween(op.seekedAtMs, op.playCalledAtMs);
+      const playPromise = msBetween(op.playCalledAtMs, op.playResolvedAtMs);
+      const calcToPlaying = msBetween(op.calculatedAtMs, op.playingEventAtMs);
+      const residualMs = op.residualAtPlayingSec == null ? null : Math.round(op.residualAtPlayingSec * 1000);
+
+      const s = op.settlingSamplesMs || {};
+      const settlingText =
+        `0 ${fmtMs(residualMs)} · 100 ${fmtMs(s[100])} · 250 ${fmtMs(s[250])} · ` +
+        `500 ${fmtMs(s[500])} · 1s ${fmtMs(s[1000])} · 2s ${fmtMs(s[2000])} · ` +
+        `3s ${fmtMs(s[3000])} · 5s ${fmtMs(s[5000])}`;
+
+      const retargetText = op.kind === "start"
+        ? ` · retargets ${op.startupRetargetCount || 0} · max target age ${fmtMs(op.startupMaxTargetAgeMs || 0)}`
+        : "";
+
+      return `${label}: calc→seek ${fmtMs(calcToSeek)} · seek ${fmtMs(seekWait)} · seek→play ${fmtMs(seekToPlay)} · play promise ${fmtMs(playPromise)} · calc→playing ${fmtMs(calcToPlaying)}${retargetText}<br>` +
+        `${label} settling: ${settlingText}`;
+    }
+
+    function scheduleSettlingSamples(op){
+      if(!op || op.playingEventAtMs == null) return;
+
+      const delays = [100, 250, 500, 1000, 2000, 3000, 5000];
+
+      for(const delay of delays){
+        setTimeout(()=>{
+          if(audio.ended) return;
+          const driftMs = Math.round(getCurrentDriftSec() * 1000);
+          op.settlingSamplesMs[delay] = driftMs;
+          updateTimingProbe();
+        }, delay);
+      }
+    }
+
+    function calibrationProbeSummary(){
+      const outputText = outputLatencySupported
+        ? `${Math.round(outputLatencySec * 1000)} ms`
+        : "unavailable";
+
+      if(!startupCalibrationMeasured){
+        return `Output latency: ${outputText}<br>Pre-curtain calibration: —`;
+      }
+
+      const pipelineLossMs = Math.round(startupPipelineLossSec * 1000);
+      const biasMs = Math.round(startupCalibrationBiasSec * 1000);
+      const passText = startupCalibrationPasses.length
+        ? startupCalibrationPasses.map((p, i)=>`pass ${i + 1}: real ${fmtMs(p.realMs)} · media ${fmtMs(p.mediaMs)} · loss ${Math.round(p.lossSec * 1000)} ms`).join("<br>")
+        : "passes —";
+      return `Output latency: ${outputText}<br>` +
+        `Warm-transfer calibration:<br>${passText}<br>` +
+        `chosen pipeline loss ${pipelineLossMs} ms · start bias ${biasMs} ms<br>` +
+        `v4.98 experiment: output latency diagnostic only; stable startup plateau corrected at 100%`;
+    }
+
+    function clampLatencySec(value){
+      if(!Number.isFinite(value) || value < 0) return 0;
+      return Math.min(OUTPUT_LATENCY_MAX_SEC, value);
+    }
+
+    function refreshOutputLatencyEstimate(){
+      if(!outputLatencyContext) return outputLatencySec;
+
+      try{
+        const candidate = outputLatencyContext.outputLatency;
+        if(Number.isFinite(candidate) && candidate >= 0){
+          outputLatencySec = clampLatencySec(candidate);
+          outputLatencySupported = true;
+        }
+      }catch(err){
+        // Keep the last good estimate. Output-latency support is optional.
+      }
+
+      return outputLatencySec;
+    }
+
+    async function prepareOutputLatencyProbe(){
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if(!AudioContextCtor) return false;
+
+      try{
+        if(!outputLatencyContext){
+          outputLatencyContext = new AudioContextCtor({ latencyHint: "playback" });
+        }
+
+        if(outputLatencyContext.state === "suspended"){
+          await outputLatencyContext.resume();
+        }
+
+        // Give the context a moment to bind to the currently selected output.
+        await new Promise(resolve=>setTimeout(resolve, 80));
+        refreshOutputLatencyEstimate();
+        updateTimingProbe();
+        return outputLatencySupported;
+      }catch(err){
+        outputLatencySupported = false;
+        outputLatencySec = 0;
+        updateTimingProbe();
+        return false;
+      }
+    }
+
+    function updateTimingProbe(){
+      const pendingText = pendingTimingOperation
+        ? `Pending ${pendingTimingOperation.kind} timing…`
+        : "No timing operation pending";
+
+      const preparationText = lastPreparationOutcome
+        ? `Preparation: ${lastPreparationOutcome}`
+        : `Preparation: —`;
+
+      timingProbeEl.innerHTML =
+        `${preparationText}<br>` +
+        `${calibrationProbeSummary()}<br>` +
+        `${timingSummary("Start", latestStartTiming)}<br>` +
+        `${timingSummary("Recovery", latestRecoveryTiming)}<br>` +
+        pendingText;
+    }
+
+    function showPlayer(){
+      audio.classList.remove("hidden");
+      audio.controls = false;
+    }
+
+    function hidePlayer(){
+      audio.classList.add("hidden");
+      audio.controls = false;
+    }
+
+    function showStartNow(mode = "begin"){
+      startNowMode = mode;
+      startNowButton.textContent = mode === "resume" ? "Resume" : "Begin";
+      startNowButton.classList.remove("hidden");
+    }
+
+    function hideStartNow(){
+      startNowButton.classList.add("hidden");
+      if(startNowMode !== "resume") startNowButton.textContent = "Begin";
+    }
+
+    function clearTimers(){
+      if(countdownFrame){
+        cancelAnimationFrame(countdownFrame);
+        countdownFrame = null;
+      }
+
+      if(countdownTimer){
+        clearTimeout(countdownTimer);
+        countdownTimer = null;
+      }
+
+      if(readinessInterval){
+        clearInterval(readinessInterval);
+        readinessInterval = null;
+      }
+    }
+
+    function clearPlaybackMonitors(){
+      if(driftInterval){
+        clearInterval(driftInterval);
+        driftInterval = null;
+      }
+
+      if(transportInterval){
+        clearInterval(transportInterval);
+        transportInterval = null;
+      }
+    }
+
+    function clearCrossfade(){
+      if(crossfadeInterval){
+        clearInterval(crossfadeInterval);
+        crossfadeInterval = null;
+      }
+    }
+
+    function resetPlaybackRate(){
+      audio.playbackRate = NORMAL_RATE;
+    }
+
+    function assignSourceIfNeeded(){
+      if(sourceAssigned) return;
+
+      audio.src = AUDIO_URL;
+      audio.preload = "auto";
+      sourceAssigned = true;
+    }
+
+    function assignPreshowSourceIfNeeded(){
+      if(preshowSourceAssigned) return;
+
+      preshowAudio.src = PRESHOW_AUDIO_URL;
+      preshowAudio.preload = "auto";
+      preshowAudio.loop = true;
+      preshowSourceAssigned = true;
+    }
+
+    function lockBeginButton(){
+      playButton.disabled = true;
+      playButton.textContent = "In Progress";
+      playButton.style.opacity = "0.4";
+    }
+
+    function unlockBeginButton(){
+      playButton.disabled = false;
+      playButton.textContent = "Begin";
+      playButton.style.opacity = "1";
+    }
+
+    function formatCountdown(ms){
+      const s = Math.max(0, Math.ceil(ms / 1000));
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+
+      return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+    }
+
+    function formatClockTime(sec){
+      sec = Math.max(0, sec || 0);
+
+      const whole = Math.floor(sec);
+      const m = Math.floor(whole / 60);
+      const s = whole % 60;
+
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    function updateTransport(){
+      const current = audio.currentTime || 0;
+      const duration = isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+      const driftMs = Math.round(lastDriftSec * 1000);
+
+      transportEl.textContent =
+        `${formatClockTime(current)} / ${formatClockTime(duration)} · drift ${driftMs} ms`;
+    }
+
+    function formatSignedMs(sec){
+      if(sec == null) return "—";
+      const ms = Math.round(sec * 1000);
+      return `${ms > 0 ? "+" : ""}${ms} ms`;
+    }
+
+    function formatElapsedSince(ms){
+      if(ms == null) return "—";
+      const totalSec = Math.max(0, Math.floor((highResNowMs() - ms) / 1000));
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return m > 0 ? `${m}m ${s}s ago` : `${s}s ago`;
+    }
+
+    function recordDriftSample(driftSec){
+      if(!isFinite(driftSec)) return;
+
+      if(initialDriftSec == null){
+        initialDriftSec = driftSec;
+      }
+
+      const absDrift = Math.abs(driftSec);
+      driftSampleCount += 1;
+      driftAbsSumSec += absDrift;
+      bestAbsDriftSec = bestAbsDriftSec == null ? absDrift : Math.min(bestAbsDriftSec, absDrift);
+      worstAbsDriftSec = worstAbsDriftSec == null ? absDrift : Math.max(worstAbsDriftSec, absDrift);
+
+      if(absDrift < 0.15) samplesUnder150 += 1;
+      if(absDrift < 0.25) samplesUnder250 += 1;
+      if(absDrift < PREFERRED_DRIFT_BAND_SEC){
+        samplesUnderThreshold += 1;
+      }else{
+        samplesAtOrAboveThreshold += 1;
+      }
+    }
+
+    function updateDriftStats(){
+      const avgAbsSec = driftSampleCount > 0 ? driftAbsSumSec / driftSampleCount : null;
+      const improvementSec = initialDriftSec == null ? null : Math.abs(initialDriftSec) - Math.abs(lastDriftSec);
+      const improvementText = improvementSec == null ? "—" : `${Math.round(improvementSec * 1000)} ms`;
+      const pct = count => driftSampleCount > 0 ? `${Math.round((count / driftSampleCount) * 100)}%` : "—";
+
+      let lastSeekText = "—";
+      if(lastSeekBeforeSec != null && lastSeekAfterSec != null){
+        lastSeekText = `${formatSignedMs(lastSeekBeforeSec)} → ${formatSignedMs(lastSeekAfterSec)} · ${formatElapsedSince(lastSuccessfulHardSeekAtMs)}`;
+      }
+
+      let settlingText = "—";
+      if(lastSeekAfterSec != null){
+        settlingText = `immediate ${formatSignedMs(lastSeekAfterSec)} · 1s ${formatSignedMs(lastSeekAfter1Sec)} · 3s ${formatSignedMs(lastSeekAfter3Sec)}`;
+      }
+
+      driftStatsEl.innerHTML =
+        `Initial ${formatSignedMs(initialDriftSec)} · Avg ${avgAbsSec == null ? "—" : `${Math.round(avgAbsSec * 1000)} ms`} · ` +
+        `Best ${bestAbsDriftSec == null ? "—" : `${Math.round(bestAbsDriftSec * 1000)} ms`} · ` +
+        `Worst ${worstAbsDriftSec == null ? "—" : `${Math.round(worstAbsDriftSec * 1000)} ms`}<br>` +
+        `Under 150 ${pct(samplesUnder150)} · Under 250 ${pct(samplesUnder250)} · Under 350 ${pct(samplesUnderThreshold)} · Above 350 ${pct(samplesAtOrAboveThreshold)}<br>` +
+        `Bad-state streak ${sustainedBadStreak}/${HARD_SEEK_REQUIRED_CHECKS} (≥420 ms) · Hard seeks ${hardSeekCount}/${HARD_SEEK_MAX_COUNT}${hardSeekCount >= HARD_SEEK_MAX_COUNT ? " · LIMIT REACHED" : ""}<br>` +
+        `Interruptions ${interruptionCount} · recovered ${interruptionAutoRecoveries + interruptionManualRecoveries} (${interruptionAutoRecoveries} auto · ${interruptionManualRecoveries} tap)<br>` +
+        `${getNetworkResilienceText()} · Network ${navigator.onLine ? "online" : "offline"}<br>` +
+        `Improvement ${improvementText} · Last ${lastSeekText}<br>` +
+        `Recovery bias: ${lastRecoveryBiasSec == null ? "—" : formatSignedMs(lastRecoveryBiasSec)} (${lastRecoveryBiasMode})<br>` +
+        `Startup plateau: ${startupObservedCorrectionState}${startupObservedCorrectionBiasSec == null ? "" : ` · bias ${formatSignedMs(startupObservedCorrectionBiasSec)}`}<br>` +
+        `Startup samples: ${startupObservedCorrectionSamplesMs.length ? startupObservedCorrectionSamplesMs.join(", ") + " ms" : "—"}<br>` +
+        `Post-seek settling: ${settlingText}`;
+    }
+
+    function resetDriftStats(){
+      initialDriftSec = null;
+      driftSampleCount = 0;
+      driftAbsSumSec = 0;
+      bestAbsDriftSec = null;
+      worstAbsDriftSec = null;
+      hardSeekCount = 0;
+      lastSeekBeforeSec = null;
+      lastSeekAfterSec = null;
+      lastSuccessfulHardSeekAtMs = null;
+      lastSeekAfter1Sec = null;
+      lastSeekAfter3Sec = null;
+      lastRecoveryBiasSec = null;
+      lastRecoveryBiasMode = "—";
+      startupObservationToken += 1;
+      startupObservationActive = false;
+      startupObservedCorrectionState = "—";
+      startupObservedCorrectionBiasSec = null;
+      startupObservedCorrectionSamplesMs = [];
+      seekSettlingToken += 1;
+      samplesUnder150 = 0;
+      samplesUnder250 = 0;
+      samplesUnderThreshold = 0;
+      samplesAtOrAboveThreshold = 0;
+      sustainedBadStreak = 0;
+      updateDriftStats();
+    }
+
+    async function syncServerClock(samples = 5){
+      let bestSample = null;
+
+      for(let i = 0; i < samples; i++){
+        try{
+          const t0 = highResNowMs();
+
+          const response = await fetch(TIME_SERVER_URL, {
+            cache: "no-store"
+          });
+
+          if(!response.ok){
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const data = await response.json();
+          const t1 = highResNowMs();
+
+          if(typeof data.now !== "number"){
+            throw new Error("Bad time response");
+          }
+
+          const roundTripMs = t1 - t0;
+          const estimatedServerNow = data.now + (roundTripMs / 2);
+          const offsetMs = estimatedServerNow - t1;
+
+          const sample = {
+            offsetMs,
+            roundTripMs
+          };
+
+          if(!bestSample || sample.roundTripMs < bestSample.roundTripMs){
+            bestSample = sample;
+          }
+        }catch(err){
+          if(i === samples - 1 && !bestSample){
+            serverClockOffsetMs = 0;
+            lastClockSyncDebug = `Clock sync failed: ${err.message}`;
+            setDebug(lastClockSyncDebug);
+            return false;
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 80));
+      }
+
+      if(bestSample){
+        serverClockOffsetMs = bestSample.offsetMs;
+
+        lastClockSyncDebug =
+          `Clock offset ${Math.round(serverClockOffsetMs)} ms · RTT ${Math.round(bestSample.roundTripMs)} ms`;
+
+        setDebug(lastClockSyncDebug);
+        return true;
+      }
+
+      serverClockOffsetMs = 0;
+      lastClockSyncDebug = "Clock sync unavailable; using device clock.";
+      setDebug(lastClockSyncDebug);
+      return false;
+    }
+
+    function clearPreparationStatusTimer(){
+      if(preparationStatusTimer){
+        clearInterval(preparationStatusTimer);
+        preparationStatusTimer = null;
+      }
+      preparationStageStartedAtMs = null;
+    }
+
+    function setPreparationStage(label){
+      clearPreparationStatusTimer();
+      currentPreparationStage = label.replace(/…$/, "");
+      preparationStageStartedAtMs = highResNowMs();
+      setStatus(label);
+
+      preparationStatusTimer = setInterval(()=>{
+        if(preparationStageStartedAtMs == null) return;
+        const elapsedSec = Math.floor((highResNowMs() - preparationStageStartedAtMs) / 1000);
+        setStatus(`${label} ${elapsedSec}s`);
+      }, 1000);
+    }
+
+    function withTimeout(promise, timeoutMs, message){
+      let timeoutId = null;
+      const timeoutPromise = new Promise((_, reject)=>{
+        timeoutId = setTimeout(()=>reject(new Error(message)), timeoutMs);
+      });
+
+      return Promise.race([promise, timeoutPromise]).finally(()=>{
+        if(timeoutId) clearTimeout(timeoutId);
+      });
+    }
+
+    async function ensureMetadata(timeoutMs = 30000){
+      assignSourceIfNeeded();
+
+      if(audio.readyState >= 1 && isFinite(audio.duration) && audio.duration > 0){
+        return true;
+      }
+
+      return new Promise((resolve, reject)=>{
+        const timeout = setTimeout(()=>{
+          cleanup();
+          reject(new Error("Metadata timeout"));
+        }, timeoutMs);
+
+        function onLoaded(){
+          cleanup();
+          resolve(true);
+        }
+
+        function onError(){
+          cleanup();
+          reject(new Error("Audio load error"));
+        }
+
+        function cleanup(){
+          clearTimeout(timeout);
+          audio.removeEventListener("loadedmetadata", onLoaded);
+          audio.removeEventListener("error", onError);
+        }
+
+        audio.addEventListener("loadedmetadata", onLoaded);
+        audio.addEventListener("error", onError);
+        // Do not call load() again here. startDownload() owns the one explicit
+        // main-track load request; restarting it can disturb slow iOS media loads.
+      });
+    }
+
+    async function ensurePreshowMetadata(timeoutMs = 15000){
+      assignPreshowSourceIfNeeded();
+
+      if(preshowAudio.readyState >= 1){
+        return true;
+      }
+
+      return new Promise(resolve=>{
+        const timeout = setTimeout(()=>{
+          cleanup();
+          resolve(false);
+        }, timeoutMs);
+
+        function onLoaded(){
+          cleanup();
+          resolve(true);
+        }
+
+        function onError(){
+          cleanup();
+          resolve(false);
+        }
+
+        function cleanup(){
+          clearTimeout(timeout);
+          preshowAudio.removeEventListener("loadedmetadata", onLoaded);
+          preshowAudio.removeEventListener("error", onError);
+        }
+
+        preshowAudio.addEventListener("loadedmetadata", onLoaded);
+        preshowAudio.addEventListener("error", onError);
+        preshowAudio.load();
+      });
+    }
+
+    function waitForSeek(){
+      return new Promise(resolve=>{
+        if(!audio.seeking){
+          resolve();
+          return;
+        }
+
+        audio.addEventListener("seeked", resolve, { once:true });
+      });
+    }
+
+    function waitForPlayableAt(targetTimeSec, timeoutMs = SEEK_PLAYABLE_TIMEOUT_MS){
+      return new Promise(resolve=>{
+        const startedAt = highResNowMs();
+        let interval = null;
+        let finished = false;
+
+        function isPlayable(){
+          if(audio.readyState >= 3) return true;
+
+          const bufferedEnd = getBufferedEndFor(targetTimeSec);
+          return bufferedEnd > targetTimeSec + LATE_JOIN_BUFFER_SEC;
+        }
+
+        function cleanup(){
+          if(interval){
+            clearInterval(interval);
+            interval = null;
+          }
+
+          audio.removeEventListener("canplay", onPlayable);
+          audio.removeEventListener("canplaythrough", onPlayable);
+          audio.removeEventListener("progress", onPlayable);
+          audio.removeEventListener("loadeddata", onPlayable);
+        }
+
+        function finish(value){
+          if(finished) return;
+          finished = true;
+          cleanup();
+          resolve(value);
+        }
+
+        function onPlayable(){
+          if(isPlayable()){
+            finish(true);
+          }
+        }
+
+        if(isPlayable()){
+          finish(true);
+          return;
+        }
+
+        audio.addEventListener("canplay", onPlayable);
+        audio.addEventListener("canplaythrough", onPlayable);
+        audio.addEventListener("progress", onPlayable);
+        audio.addEventListener("loadeddata", onPlayable);
+
+        interval = setInterval(()=>{
+          if(isPlayable()){
+            finish(true);
+            return;
+          }
+
+          if(highResNowMs() - startedAt >= timeoutMs){
+            finish(false);
+          }
+        }, 200);
+      });
+    }
+
+    async function primeAudioElement(){
+      try{
+        assignSourceIfNeeded();
+
+        audio.muted = true;
+        await withTimeout(audio.play(), 12000, "Audio priming timeout");
+
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+
+        await withTimeout(waitForSeek(), 5000, "Audio reset seek timeout");
+
+        return true;
+      }catch(err){
+        audio.pause();
+        audio.muted = false;
+        throw err;
+      }
+    }
+
+    function waitForPlayingEvent(timeoutMs = 3000){
+      return new Promise(resolve=>{
+        let finished = false;
+
+        const timeout = setTimeout(()=>{
+          cleanup();
+          resolve(false);
+        }, timeoutMs);
+
+        function cleanup(){
+          if(finished) return;
+          finished = true;
+          clearTimeout(timeout);
+          audio.removeEventListener("playing", onPlaying);
+        }
+
+        function onPlaying(){
+          cleanup();
+          resolve(true);
+        }
+
+        audio.addEventListener("playing", onPlaying, { once:true });
+      });
+    }
+
+    async function calibrateStartupBias(){
+      startupCalibrationBiasSec = 0;
+      startupCalibrationMeasured = false;
+      startupCalibrationRealElapsedMs = null;
+      startupCalibrationMediaElapsedMs = null;
+      startupPipelineLossSec = 0;
+      startupCalibrationPasses = [];
+      refreshOutputLatencyEstimate();
+      updateTimingProbe();
+
+      try{
+        assignSourceIfNeeded();
+        await ensureMetadata();
+
+        audio.pause();
+        audio.muted = true;
+        audio.volume = MAIN_VOLUME;
+
+        const calibrationStartSec =
+          isFinite(audio.duration) && audio.duration > 3
+            ? 1.0
+            : 0;
+
+        // v4.3 experiment: use one pass to warm/prime the selected output path,
+        // then repeat the exact start sequence and transfer the SECOND pass's
+        // measured loss to the real curtain start. This avoids assuming that
+        // a cold-start loss is identical to the already-warmed performance start.
+        // outputLatency remains diagnostic; it is not added or maxed into the
+        // start bias because it may overlap the media-side calibration signal.
+        for(let passIndex = 0; passIndex < 2; passIndex++){
+          audio.pause();
+          audio.currentTime = calibrationStartSec;
+          await waitForSeek();
+
+          const playingPromise = waitForPlayingEvent();
+          await audio.play();
+          const didPlay = await playingPromise;
+
+          if(!didPlay || audio.paused){
+            throw new Error(`Calibration pass ${passIndex + 1} did not establish`);
+          }
+
+          const realStartMs = highResNowMs();
+          const mediaStartSec = audio.currentTime;
+
+          await new Promise(resolve=>setTimeout(resolve, START_CALIBRATION_SAMPLE_MS));
+
+          const realEndMs = highResNowMs();
+          const mediaEndSec = audio.currentTime;
+
+          const realElapsedSec = Math.max(0, (realEndMs - realStartMs) / 1000);
+          const mediaElapsedSec = Math.max(0, mediaEndSec - mediaStartSec);
+          const measuredLossSec = Math.max(0, realElapsedSec - mediaElapsedSec);
+
+          startupCalibrationPasses.push({
+            realMs: Math.round(realElapsedSec * 1000),
+            mediaMs: Math.round(mediaElapsedSec * 1000),
+            lossSec: measuredLossSec
+          });
+
+          audio.pause();
+          // Briefly yield so the second pass is a distinct start, while keeping
+          // the output route warm.
+          await new Promise(resolve=>setTimeout(resolve, 80));
+        }
+
+        const chosen = startupCalibrationPasses[startupCalibrationPasses.length - 1];
+        startupCalibrationRealElapsedMs = chosen.realMs;
+        startupCalibrationMediaElapsedMs = chosen.mediaMs;
+        startupPipelineLossSec = chosen.lossSec;
+
+        refreshOutputLatencyEstimate();
+        startupCalibrationBiasSec = Math.max(
+          0,
+          Math.min(START_CALIBRATION_MAX_BIAS_SEC, startupPipelineLossSec)
+        );
+        startupCalibrationMeasured = true;
+
+        audio.pause();
+        audio.currentTime = 0;
+        await waitForSeek();
+        audio.muted = false;
+
+        updateTimingProbe();
+        return true;
+      }catch(err){
+        audio.pause();
+        try{
+          audio.currentTime = 0;
+          await waitForSeek();
+        }catch(resetErr){
+          // Best-effort reset only.
+        }
+        audio.muted = false;
+        startupCalibrationBiasSec = 0;
+        startupCalibrationMeasured = false;
+        startupPipelineLossSec = 0;
+        startupCalibrationPasses = [];
+        updateTimingProbe();
+        return false;
+      }
+    }
+
+    function startDownload(){
+      assignSourceIfNeeded();
+      audio.preload = "auto";
+      audio.load();
+
+      assignPreshowSourceIfNeeded();
+      preshowAudio.preload = "auto";
+      preshowAudio.load();
+    }
+
+    async function startPreshowLoop(){
+      assignPreshowSourceIfNeeded();
+
+      try{
+        await ensurePreshowMetadata();
+
+        clearCrossfade();
+
+        preshowAudio.loop = true;
+        preshowAudio.muted = false;
+        preshowAudio.volume = PRESHOW_VOLUME;
+
+        if(preshowAudio.paused){
+          await preshowAudio.play();
+        }
+
+        preshowPlaying = true;
+        return true;
+      }catch(err){
+        preshowPlaying = false;
+        setDebug(`${lastClockSyncDebug} · Pre-show audio blocked or unavailable: ${err.message}`);
+        return false;
+      }
+    }
+
+    function stopPreshowImmediately(){
+      clearCrossfade();
+
+      preshowAudio.pause();
+
+      try{
+        preshowAudio.currentTime = 0;
+      }catch(err){
+        // Ignore seek errors on partially loaded mobile audio.
+      }
+
+      preshowAudio.volume = PRESHOW_VOLUME;
+      preshowPlaying = false;
+    }
+
+    function crossfadeFromPreshowToMain(){
+      clearCrossfade();
+
+      const startedAt = highResNowMs();
+
+      audio.volume = 0;
+      audio.muted = false;
+
+      if(!preshowPlaying || preshowAudio.paused){
+        audio.volume = MAIN_VOLUME;
+        return;
+      }
+
+      crossfadeInterval = setInterval(()=>{
+        const elapsed = highResNowMs() - startedAt;
+        const progress = Math.min(1, elapsed / CROSSFADE_MS);
+
+        audio.volume = MAIN_VOLUME * progress;
+        preshowAudio.volume = PRESHOW_VOLUME * (1 - progress);
+
+        if(progress >= 1){
+          clearCrossfade();
+
+          audio.volume = MAIN_VOLUME;
+          stopPreshowImmediately();
+        }
+      }, FADE_STEP_MS);
+    }
+
+    function getBufferedEndFor(targetTimeSec){
+      try{
+        if(audio.buffered.length === 0) return 0;
+
+        for(let i = 0; i < audio.buffered.length; i++){
+          const start = audio.buffered.start(i);
+          const end = audio.buffered.end(i);
+
+          if(targetTimeSec >= start && targetTimeSec <= end){
+            return end;
+          }
+        }
+
+        return 0;
+      }catch(err){
+        return 0;
+      }
+    }
+
+    function getBufferedCoverage(){
+      try{
+        if(!isFinite(audio.duration) || audio.duration <= 0 || audio.buffered.length === 0){
+          return { seconds: 0, percent: 0, full: false };
+        }
+
+        let total = 0;
+        for(let i = 0; i < audio.buffered.length; i++){
+          total += Math.max(0, audio.buffered.end(i) - audio.buffered.start(i));
+        }
+
+        const percent = Math.max(0, Math.min(100, (total / audio.duration) * 100));
+        const full = percent >= 99 || (audio.buffered.length === 1 && audio.buffered.start(0) <= 0.25 && audio.buffered.end(0) >= audio.duration - 0.5);
+        return { seconds: total, percent, full };
+      }catch(err){
+        return { seconds: 0, percent: 0, full: false };
+      }
+    }
+
+    function getNetworkResilienceText(){
+      const coverage = getBufferedCoverage();
+      const bufferText = coverage.full ? "Main audio fully buffered" : `Main audio buffer ${Math.round(coverage.percent)}%`;
+      const lockText = performanceClockFrozen ? "Clock frozen" : "Clock live";
+      return `${lockText} · ${bufferText}`;
+    }
+
+    function hasBufferedThrough(targetTimeSec){
+      try{
+        if(audio.buffered.length === 0) return false;
+
+        for(let i = 0; i < audio.buffered.length; i++){
+          const start = audio.buffered.start(i);
+          const end = audio.buffered.end(i);
+
+          if(targetTimeSec >= start && targetTimeSec <= end - 0.25){
+            return true;
+          }
+        }
+
+        return false;
+      }catch(err){
+        return false;
+      }
+    }
+
+    function hasEnoughToStartAt(offsetSec){
+      if(!audio.duration || !isFinite(audio.duration)) return false;
+
+      if(offsetSec < 1){
+        return audio.readyState >= 3 || audio.buffered.length > 0;
+      }
+
+      return hasBufferedThrough(offsetSec + START_BUFFER_SEC);
+    }
+
+    function getExpectedTrackTimeSec(){
+      if(scheduledAnchorMs == null) return null;
+
+      return Math.max(0, (syncedNowMs() - scheduledAnchorMs) / 1000);
+    }
+
+    function getCurrentDriftSec(){
+      const expected = getExpectedTrackTimeSec();
+
+      if(expected == null) return 0;
+
+      // Drift is measured against the canonical timeline using the media playhead.
+      // Output-path latency is already compensated in the seek/start target, so
+      // adding it again here would double-count the same delay.
+      return expected - audio.currentTime;
+    }
+
+    function clampObservedRecoveryBiasSec(value){
+      if(!Number.isFinite(value)) return 0;
+      return Math.max(
+        -OBSERVED_RECOVERY_MAX_BIAS_SEC,
+        Math.min(OBSERVED_RECOVERY_MAX_BIAS_SEC, value)
+      );
+    }
+
+    function getRecoveryMediaTargetSec(expectedSec, preSeekDriftSec){
+      // v4.6–v4.98:
+      // outputLatency remains diagnostic only. For the FIRST correction within
+      // the startup-settling window, use the drift we actually observed as a
+      // one-shot empirical lead/lag estimate. Later corrections go straight to
+      // the canonical media position and let the existing bounded controller
+      // decide whether another intervention is warranted.
+      const msSincePlaying =
+        latestStartTiming && latestStartTiming.playingEventAtMs != null
+          ? highResNowMs() - latestStartTiming.playingEventAtMs
+          : Infinity;
+
+      const useObservedStartupBias =
+        hardSeekCount === 0 &&
+        msSincePlaying <= STARTUP_SETTLING_RECOVERY_WINDOW_MS &&
+        Number.isFinite(preSeekDriftSec);
+
+      const recoveryBiasSec = useObservedStartupBias
+        ? clampObservedRecoveryBiasSec(preSeekDriftSec)
+        : 0;
+
+      lastRecoveryBiasSec = recoveryBiasSec;
+      lastRecoveryBiasMode = useObservedStartupBias
+        ? "observed startup drift"
+        : "canonical target";
+
+      return expectedSec + recoveryBiasSec;
+    }
+
+    function scheduleObservedStartupCorrection(op){
+      if(!op || op.kind !== "start" || op.playingEventAtMs == null) return;
+
+      const token = ++startupObservationToken;
+      const interruptionBaseline = interruptionCount;
+      const samples = [];
+      startupObservationActive = true;
+      startupObservedCorrectionSamplesMs = [];
+      startupObservedCorrectionBiasSec = null;
+      startupObservedCorrectionState = "observing settled startup 0/3";
+      sustainedBadStreak = 0;
+      updateDriftStats();
+
+      STARTUP_OBSERVATION_DELAYS_MS.forEach((delay, index)=>{
+        setTimeout(async ()=>{
+          if(token !== startupObservationToken) return;
+
+          if(audio.paused || audio.ended || scheduledAnchorMs == null || interruptionCount !== interruptionBaseline){
+            startupObservationActive = false;
+            startupObservedCorrectionState = "aborted";
+            sustainedBadStreak = 0;
+            updateDriftStats();
+            return;
+          }
+
+          const driftSec = getCurrentDriftSec();
+          samples.push(driftSec);
+          startupObservedCorrectionSamplesMs = samples.map(v=>Math.round(v * 1000));
+          startupObservedCorrectionState =
+            `observing settled startup ${samples.length}/3 (${startupObservedCorrectionSamplesMs.join(", ")} ms)`;
+          updateDriftStats();
+
+          if(index !== STARTUP_OBSERVATION_DELAYS_MS.length - 1) return;
+
+          // Observation owns the startup window; release the generic controller
+          // only after we have decided what the startup path actually did.
+          startupObservationActive = false;
+          sustainedBadStreak = 0;
+
+          if(hardSeekCount !== 0){
+            startupObservedCorrectionState = "skipped — correction already occurred";
+            updateDriftStats();
+            return;
+          }
+
+          const minDrift = Math.min(...samples);
+          const maxDrift = Math.max(...samples);
+          const spreadSec = maxDrift - minDrift;
+          const sorted = [...samples].sort((a,b)=>a-b);
+          const plateauSec = sorted[Math.floor(sorted.length / 2)];
+
+          if(spreadSec > STARTUP_OBSERVATION_MAX_SPREAD_SEC){
+            startupObservedCorrectionState = `unstable — spread ${Math.round(spreadSec * 1000)} ms; generic controller released`;
+            updateDriftStats();
+            return;
+          }
+
+          if(Math.abs(plateauSec) < STARTUP_OBSERVATION_MIN_BIAS_SEC){
+            startupObservedCorrectionState = `stable ${formatSignedMs(plateauSec)} — no correction needed`;
+            updateDriftStats();
+            return;
+          }
+
+          // v4.98 applies 100% of the observed plateau. This is a narrow tuning probe
+          // to test whether the full observed stable plateau can be removed without
+          // introducing overshoot; still encodes no device/platform rule.
+          const conservativeCorrectionSec = clampObservedRecoveryBiasSec(
+            plateauSec * STARTUP_OBSERVED_CORRECTION_FACTOR
+          );
+          startupObservedCorrectionBiasSec = conservativeCorrectionSec;
+          startupObservedCorrectionState =
+            `stable ${formatSignedMs(plateauSec)} — applying 100% ${formatSignedMs(conservativeCorrectionSec)}`;
+          updateDriftStats();
+
+          // Consume this observation exactly once. We correct only the device/run
+          // actually measured, never a platform label and never outputLatency.
+          startupObservationToken += 1;
+
+          const corrected = await hardSyncToExpectedTime(
+            `v4.98 startup correction: 100% of settled drift (${Math.round(conservativeCorrectionSec * 1000)} of ${Math.round(plateauSec * 1000)} ms)`,
+            conservativeCorrectionSec
+          );
+
+          startupObservedCorrectionState = corrected
+            ? `corrected 100%: plateau ${formatSignedMs(plateauSec)} → applied ${formatSignedMs(conservativeCorrectionSec)}`
+            : `stable ${formatSignedMs(plateauSec)} — 100% correction deferred`;
+          updateDriftStats();
+        }, delay);
+      });
+    }
+
+    async function hardSyncToExpectedTime(reason, preSeekDriftSec){
+      const expected = getExpectedTrackTimeSec();
+
+      if(expected == null) return false;
+      if(!isFinite(audio.duration) || expected >= audio.duration) return false;
+
+      const recoveryTarget = Math.min(
+        Math.max(0, getRecoveryMediaTargetSec(expected, preSeekDriftSec)),
+        audio.duration - 0.05
+      );
+      const bufferedEnd = getBufferedEndFor(recoveryTarget);
+
+      if(bufferedEnd > recoveryTarget + 1){
+        audio.currentTime = recoveryTarget;
+        await waitForSeek();
+
+        lastDriftSec = getCurrentDriftSec();
+        hardSeekCount += 1;
+        lastSeekBeforeSec = preSeekDriftSec;
+        lastSeekAfterSec = lastDriftSec;
+        lastSuccessfulHardSeekAtMs = highResNowMs();
+        // Any successful seek — startup observer or generic controller — owns
+        // the cooldown. This prevents a second controller intervention while
+        // the playback pipeline is still settling from the seek.
+        lastHardSeekAtMs = lastSuccessfulHardSeekAtMs;
+        lastSeekAfter1Sec = null;
+        lastSeekAfter3Sec = null;
+        const thisSeekToken = ++seekSettlingToken;
+
+        setTimeout(()=>{
+          if(thisSeekToken !== seekSettlingToken || audio.paused || audio.ended) return;
+          lastSeekAfter1Sec = getCurrentDriftSec();
+          updateDriftStats();
+        }, 1000);
+
+        setTimeout(()=>{
+          if(thisSeekToken !== seekSettlingToken || audio.paused || audio.ended) return;
+          lastSeekAfter3Sec = getCurrentDriftSec();
+          updateDriftStats();
+        }, 3000);
+
+        setStatus(reason);
+        updateTransport();
+        updateDriftStats();
+        return true;
+      }else{
+        setStatus("Sync delayed — buffering");
+        setDebug(`Need audio near ${formatClockTime(recoveryTarget)} before correcting.`);
+        return false;
+      }
+    }
+
+    function checkDriftStabilityFirst(){
+      if(audio.paused || audio.ended || scheduledAnchorMs == null) return;
+
+      const driftSec = getCurrentDriftSec();
+      lastDriftSec = driftSec;
+      recordDriftSample(driftSec);
+      updateDriftStats();
+
+      const nowMs = highResNowMs();
+
+      // v4.9: the observer gets exclusive ownership of the first two seconds.
+      // We still record drift for diagnostics, but do not let the generic
+      // controller race the startup measurement.
+      if(startupObservationActive){
+        sustainedBadStreak = 0;
+        setStatus("Playing");
+        updateDriftStats();
+        updateTransport();
+        return;
+      }
+
+      // A seek can make currentTime look wildly wrong for a short interval even
+      // though the audible path is still catching up. Ignore that transient for
+      // intervention purposes, then resume the normal bounded controller.
+      const inPostSeekSettlingGrace =
+        lastSuccessfulHardSeekAtMs != null &&
+        nowMs - lastSuccessfulHardSeekAtMs < POST_SEEK_SETTLING_GRACE_MS;
+
+      if(inPostSeekSettlingGrace){
+        sustainedBadStreak = 0;
+        setStatus("Playing");
+        updateDriftStats();
+        updateTransport();
+        return;
+      }
+
+      const absDriftSec = Math.abs(driftSec);
+      if(absDriftSec >= HARD_SEEK_TRIGGER_SEC){
+        sustainedBadStreak += 1;
+      }else{
+        sustainedBadStreak = 0;
+      }
+      updateDriftStats();
+
+      const cooldownElapsed = nowMs - lastHardSeekAtMs >= HARD_SEEK_COOLDOWN_MS;
+      const sustainedBadState = sustainedBadStreak >= HARD_SEEK_REQUIRED_CHECKS;
+      const correctionLimitReached = hardSeekCount >= HARD_SEEK_MAX_COUNT;
+
+      if(correctionLimitReached){
+        // Concede for the remainder of this run. Continued seeking would create
+        // more audience disturbance than the stable residual drift is worth.
+        sustainedBadStreak = 0;
+        setStatus("Playing · correction limit reached");
+        updateDriftStats();
+        updateTransport();
+        return;
+      }
+
+      if(sustainedBadState && cooldownElapsed){
+        lastHardSeekAtMs = nowMs;
+        sustainedBadStreak = 0;
+        hardSyncToExpectedTime(
+          `Seek correction after sustained drift (${Math.round(driftSec * 1000)} ms)`,
+          driftSec
+        );
+      }else{
+        setStatus("Playing");
+        updateTransport();
+      }
+    }
+
+    function beginPlaybackMonitors(){
+      clearPlaybackMonitors();
+
+      driftInterval = setInterval(checkDriftStabilityFirst, DRIFT_CHECK_MS);
+      transportInterval = setInterval(updateTransport, TRANSPORT_UPDATE_MS);
+    }
+
+
+    function performanceShouldBePlaying(){
+      if(!performanceClockFrozen || scheduledAnchorMs == null || audio.ended) return false;
+      if(!isFinite(audio.duration) || audio.duration <= 0) return false;
+
+      const expected = getExpectedTrackTimeSec();
+      return expected != null && expected >= 0 && expected < audio.duration - 0.25;
+    }
+
+    function clearInterruptionRecoveryTimer(){
+      if(interruptionRecoveryTimer){
+        clearTimeout(interruptionRecoveryTimer);
+        interruptionRecoveryTimer = null;
+      }
+    }
+
+    function offerResumeAfterInterruption(detail = "Audio interrupted"){
+      clearInterruptionRecoveryTimer();
+      interruptionAwaitingTap = true;
+      waitingForManualStart = false;
+      startNowButton.disabled = false;
+      showStartNow("resume");
+      setStatus(`${detail} — tap Resume`);
+      setDebug(`${lastClockSyncDebug || "Clock prepared"} · Performance clock preserved; Resume will rejoin the live show position.`);
+      updateDriftStats();
+    }
+
+    async function recoverInterruptedPlayback(fromUserGesture = false){
+      if(interruptionRecoveryInFlight) return false;
+      if(!performanceShouldBePlaying()) return false;
+
+      interruptionRecoveryInFlight = true;
+      clearInterruptionRecoveryTimer();
+
+      const timingOp = beginTimingOperation("recovery");
+
+      try{
+        let expected = getExpectedTrackTimeSec();
+        if(expected == null || !isFinite(expected)) return false;
+        expected = Math.max(0, Math.min(expected, audio.duration - 0.05));
+
+        // Re-use the same principle as late join: the frozen show clock is truth.
+        // If the target is already buffered, jump directly there before resuming.
+        const bufferedEnd = getBufferedEndFor(expected);
+        if(bufferedEnd > expected + 0.25){
+          timingOp.seekAssignedAtMs = highResNowMs();
+          audio.currentTime = expected;
+          await waitForSeek();
+          timingOp.seekedAtMs = highResNowMs();
+        }
+
+        audio.muted = false;
+        audio.volume = MAIN_VOLUME;
+        timingOp.playCalledAtMs = highResNowMs();
+        await audio.play();
+        timingOp.playResolvedAtMs = highResNowMs();
+
+        if(audio.paused) throw new Error("Playback remained paused");
+
+        interruptionAwaitingTap = false;
+        startNowMode = "begin";
+        hideStartNow();
+        lockBeginButton();
+        lastDriftSec = getCurrentDriftSec();
+
+        if(fromUserGesture){
+          interruptionManualRecoveries += 1;
+        }else{
+          interruptionAutoRecoveries += 1;
+        }
+
+        setStatus("Playing");
+        setDebug(`${lastClockSyncDebug || "Clock prepared"} · Recovered from interruption at ${formatClockTime(audio.currentTime)}; show clock preserved.`);
+        updateTransport();
+        updateDriftStats();
+        return true;
+      }catch(err){
+        if(pendingTimingOperation && pendingTimingOperation.id === timingOp.id){
+          finishTimingOperation(timingOp);
+        }
+        offerResumeAfterInterruption("Audio interrupted");
+        return false;
+      }finally{
+        interruptionRecoveryInFlight = false;
+      }
+    }
+
+    function scheduleAutomaticInterruptionRecovery(reason = "Audio interrupted"){
+      if(!performanceShouldBePlaying() || !audio.paused || interruptionRecoveryInFlight) return;
+
+      // v3.8 rule: there is no indefinite recovery state. If the page is visible,
+      // give the OS/audio route a short grace period, attempt one canonical-timeline
+      // rejoin, then fall back to a Resume tap if playback still is not advancing.
+      clearInterruptionRecoveryTimer();
+      interruptionAwaitingTap = false;
+      hideStartNow();
+      setStatus(`${reason} — recovering…`);
+
+      interruptionRecoveryTimer = setTimeout(async ()=>{
+        interruptionRecoveryTimer = null;
+        if(!performanceShouldBePlaying()) return;
+        if(!audio.paused) return;
+
+        const recovered = await recoverInterruptedPlayback(false);
+        if(recovered){
+          // A resolved play() promise is encouraging, but verify that the media
+          // element actually remains in a playing state after the route settles.
+          interruptionRecoveryTimer = setTimeout(()=>{
+            interruptionRecoveryTimer = null;
+            if(performanceShouldBePlaying() && audio.paused){
+              offerResumeAfterInterruption("Audio interrupted");
+            }
+          }, INTERRUPTION_VERIFY_DELAY_MS);
+        }else if(performanceShouldBePlaying()){
+          offerResumeAfterInterruption("Audio interrupted");
+        }
+      }, INTERRUPTION_RECOVERY_DELAY_MS);
+    }
+
+    function handleUnexpectedPerformancePause(){
+      updateTransport();
+      if(!performanceShouldBePlaying()) return;
+
+      interruptionCount += 1;
+      updateDriftStats();
+
+      // If an OS-level interruption temporarily hides the page (phone call,
+      // audio-route picker, etc.), preserve the canonical timeline and wait only
+      // until the page is visible again. The visibility handler then starts the
+      // bounded recovery watchdog. A visible-page route loss still gets the safe
+      // one-tap Resume immediately so audio cannot unexpectedly jump to speakers.
+      if(document.visibilityState === "hidden"){
+        interruptionAwaitingTap = false;
+        clearInterruptionRecoveryTimer();
+        setStatus("Audio interrupted — recovery pending");
+        return;
+      }
+
+      offerResumeAfterInterruption("Audio interrupted");
+    }
+
+    async function handleResumeTap(){
+      startNowButton.disabled = true;
+      try{
+        const recovered = await recoverInterruptedPlayback(true);
+        if(!recovered && performanceShouldBePlaying()){
+          offerResumeAfterInterruption("Audio interrupted");
+        }
+      }finally{
+        startNowButton.disabled = false;
+      }
+    }
+
+    async function seekToFreshStartupTarget(timingOp){
+      // v4.5/v4.6 startup-target experiment:
+      // Never assume a target calculated before an async seek is still current
+      // after that seek completes. This is deliberately platform-agnostic.
+      //
+      // We seek to the current canonical show position + measured warm-transfer
+      // bias, wait for the browser to complete the seek, then ask the frozen show
+      // clock how old that target has become. If it aged by >=250 ms while waiting,
+      // retarget to the newly-current show position. At most two retargets are
+      // allowed; after that the existing bounded drift recovery remains the safety net.
+      let retargetCount = 0;
+
+      while(true){
+        const expectedAtAssignmentSec = Math.max(
+          0,
+          Math.min(getExpectedTrackTimeSec() || 0, audio.duration - 0.05)
+        );
+        const targetSec = Math.min(
+          expectedAtAssignmentSec + startupCalibrationBiasSec,
+          audio.duration - 0.05
+        );
+
+        timingOp.seekAssignedAtMs = highResNowMs();
+        audio.currentTime = targetSec;
+        await waitForSeek();
+        timingOp.seekedAtMs = highResNowMs();
+
+        const expectedAfterSeekSec = Math.max(
+          0,
+          Math.min(getExpectedTrackTimeSec() || 0, audio.duration - 0.05)
+        );
+        const targetAgeSec = Math.max(0, expectedAfterSeekSec - expectedAtAssignmentSec);
+        const targetAgeMs = Math.round(targetAgeSec * 1000);
+
+        timingOp.startupMaxTargetAgeMs = Math.max(
+          timingOp.startupMaxTargetAgeMs || 0,
+          targetAgeMs
+        );
+
+        if(targetAgeSec < START_TARGET_STALE_SEC){
+          return targetSec;
+        }
+
+        if(retargetCount >= START_RETARGET_MAX_COUNT){
+          setDebug(`${lastClockSyncDebug} · Startup seek remained stale after ${retargetCount} retargets; continuing with bounded drift recovery.`);
+          return targetSec;
+        }
+
+        retargetCount += 1;
+        timingOp.startupRetargetCount = retargetCount;
+        setStatus("Calibrating playback…");
+        setDebug(`${lastClockSyncDebug} · Startup seek aged ${targetAgeMs} ms; refreshing live target (${retargetCount}/${START_RETARGET_MAX_COUNT}).`);
+      }
+    }
+
+    async function startPlaybackAtCurrentCorrectOffset(){
+      if(scheduledAnchorMs == null){
+        throw new Error("No scheduled anchor");
+      }
+
+      await ensureMetadata();
+
+      // Performance lock: from this point forward the canonical timeline
+      // is derived from the last good server offset plus performance.now().
+      // Network changes cannot alter the show timeline.
+      freezePerformanceClock();
+
+      const timingOp = beginTimingOperation("start");
+
+      let offsetSec = Math.max(0, (syncedNowMs() - scheduledAnchorMs) / 1000);
+      timingOp.expectedAtCalculationSec = offsetSec;
+
+      if(!isFinite(audio.duration) || offsetSec >= audio.duration){
+        stopPreshowImmediately();
+        setStatus("Start time is beyond the end of the audio");
+        return false;
+      }
+
+      audio.pause();
+      resetPlaybackRate();
+
+      const isLateJoin = offsetSec >= 1;
+
+      if(isLateJoin){
+        setStatus("Joining in progress…");
+        setDebug(`${lastClockSyncDebug} · Seeking to ${formatClockTime(offsetSec)}.`);
+
+        // Keep the existing late-join buffering gate. The actual performance
+        // seek below will then use a freshly recomputed target.
+        const initialJoinTarget = Math.min(
+          offsetSec + startupCalibrationBiasSec,
+          audio.duration - 0.05
+        );
+        const playable = await waitForPlayableAt(initialJoinTarget);
+
+        if(!playable){
+          setStatus("Still buffering…");
+          setDebug(`${lastClockSyncDebug} · Tap Begin again if needed.`);
+          return false;
+        }
+      }else{
+        if(!hasEnoughToStartAt(offsetSec)){
+          setStatus("Preparing audio…");
+          setDebug(`Waiting for larger mobile buffer at ${formatClockTime(offsetSec)}.`);
+          return false;
+        }
+      }
+
+      // v4.5/v4.6: one startup path for on-time starts and late joins. The target is
+      // refreshed after any slow async seek before play() is called.
+      await seekToFreshStartupTarget(timingOp);
+
+      showPlayer();
+
+      if(preshowPlaying && !preshowAudio.paused){
+        audio.volume = 0;
+      }else{
+        audio.volume = MAIN_VOLUME;
+      }
+
+      audio.muted = false;
+
+      timingOp.playCalledAtMs = highResNowMs();
+      await audio.play();
+      timingOp.playResolvedAtMs = highResNowMs();
+
+      crossfadeFromPreshowToMain();
+
+      lockBeginButton();
+      waitingForManualStart = false;
+      startAttempted = true;
+
+      hideStartNow();
+      setCountdown("");
+      setStatus("Playing");
+      setDebug(`${lastClockSyncDebug || "Clock prepared"} · output latency ${outputLatencySupported ? Math.round(outputLatencySec * 1000) + " ms" : "unavailable"} · warm-transfer bias ${Math.round(startupCalibrationBiasSec * 1000)} ms · output latency diagnostic only · v4.98 observes settled startup drift at 1.0/1.5/2.0 s and corrects 100% of a stable plateau once; no platform sniffing; generic controller stands down during observation and post-seek settling · drift excludes output latency · ${getNetworkResilienceText()} · Network changes ignored during performance.`);
+
+      lastDriftSec = getCurrentDriftSec();
+
+      updateTransport();
+      beginPlaybackMonitors();
+
+      return true;
+    }
+
+    async function tryAutomaticStart(){
+      if(startAttempted) return;
+
+      startAttempted = true;
+
+      try{
+        const started = await startPlaybackAtCurrentCorrectOffset();
+
+        if(!started){
+          startAttempted = false;
+          waitingForManualStart = true;
+          showStartNow();
+          setStatus("Ready — tap Begin");
+        }
+      }catch(err){
+        startAttempted = false;
+        waitingForManualStart = true;
+        showStartNow();
+        setStatus("Tap Begin");
+        setDebug(`Automatic start was blocked: ${err.message}`);
+      }
+    }
+
+    function beginCountdown(startTimeMs){
+      clearTimers();
+      startAttempted = false;
+
+      readinessInterval = setInterval(()=>{
+        const offsetSec = Math.max(0, (syncedNowMs() - startTimeMs) / 1000);
+        const bufferedEnd = getBufferedEndFor(offsetSec);
+        const bufferedAhead = Math.max(0, bufferedEnd - offsetSec);
+
+        const coverage = getBufferedCoverage();
+        if(hasEnoughToStartAt(offsetSec)){
+          setDebug(`${lastClockSyncDebug} · Audio ready. Buffer ahead ${bufferedAhead.toFixed(1)}s · total buffered ${Math.round(coverage.percent)}%.`);
+        }else{
+          setDebug(`${lastClockSyncDebug} · Preloading audio. Buffer ahead ${bufferedAhead.toFixed(1)}s · total buffered ${Math.round(coverage.percent)}%.`);
+        }
+      }, READINESS_CHECK_MS);
+
+      function updateCountdown(){
+        const remaining = startTimeMs - syncedNowMs();
+
+        if(remaining <= 0){
+          clearTimers();
+          setCountdown("Starting now");
+          tryAutomaticStart();
+          return;
+        }
+
+        setCountdown(`Starting in ${formatCountdown(remaining)}`);
+        setStatus(preshowPlaying ? "Pre-show playing…" : "Downloading…");
+
+        countdownFrame = requestAnimationFrame(updateCountdown);
+      }
+
+      updateCountdown();
+
+      countdownTimer = setTimeout(()=>{
+        clearTimers();
+        setCountdown("Starting now");
+        tryAutomaticStart();
+      }, Math.max(0, startTimeMs - syncedNowMs()));
+    }
+
+    async function handlePrepare(isAutomaticRetry = false){
+      // A fresh audience/user Begin starts a new preparation cycle.
+      // An internal retry preserves the attempt count so we retry only once.
+      if(!isAutomaticRetry){
+        preparationAttemptCount = 0;
+      }
+
+      let delegatedRetry = false;
+      clearPreparationStatusTimer();
+      preparationAttemptCount += 1;
+      preparationAttemptStartedAtMs = highResNowMs();
+      currentPreparationStage = "starting";
+      clearTimers();
+      clearPlaybackMonitors();
+      clearCrossfade();
+      resetPlaybackRate();
+      unfreezePerformanceClock();
+
+      stopPreshowImmediately();
+      startNowMode = "begin";
+      hideStartNow();
+      waitingForManualStart = false;
+      startAttempted = false;
+      lastDriftSec = 0;
+      lastHardSeekAtMs = 0;
+      resetDriftStats();
+      audio.volume = MAIN_VOLUME;
+
+      pendingTimingOperation = null;
+      latestStartTiming = null;
+      latestRecoveryTiming = null;
+      startupCalibrationBiasSec = 0;
+      startupCalibrationMeasured = false;
+      startupCalibrationRealElapsedMs = null;
+      startupCalibrationMediaElapsedMs = null;
+      startupPipelineLossSec = 0;
+      startupCalibrationPasses = [];
+      updateTimingProbe();
+
+      setDebug("");
+
+      if(!startInput.value){
+        setStatus("Enter a start time");
+        return;
+      }
+
+      if(!AUDIO_URL.startsWith("http")){
+        setStatus("Add your audio URL first");
+        return;
+      }
+
+      // v4.5 retains the gesture-bound preparation experiment: on a real audience tap, invoke the Web Audio
+      // output probe NOW, while this call stack still owns trusted user activation.
+      // Do not await it yet; simply starting resume() here is the important part.
+      // Automatic retry reuses the already-started probe/context instead of
+      // pretending it has a fresh user gesture.
+      if(!isAutomaticRetry){
+        try{
+          gestureOutputProbePromise = prepareOutputLatencyProbe();
+        }catch(err){
+          gestureOutputProbePromise = Promise.resolve(false);
+        }
+      }
+
+      playButton.disabled = true;
+      playButton.textContent = "Preparing…";
+
+      try{
+        hidePlayer();
+        startDownload();
+        setPreparationStage("Syncing clock…");
+
+        await syncServerClock();
+
+        setPreparationStage("Downloading metadata…");
+        await ensureMetadata();
+        updateTransport();
+
+        // This stays feature-detected. Unsupported/older browsers simply fall
+        // back to the pre-curtain behavioral calibration already used by v4.
+        // On attempt 1, the promise was deliberately STARTED synchronously in
+        // the Begin gesture above. We await it only now, after clock/metadata work.
+        setPreparationStage("Checking audio output…");
+        const outputProbeTimeoutMs = preparationAttemptCount > 1 ? 10000 : 5000;
+        const outputProbePromise = gestureOutputProbePromise || prepareOutputLatencyProbe();
+        await withTimeout(outputProbePromise, outputProbeTimeoutMs, "Output latency probe timeout");
+
+        setPreparationStage("Priming audio…");
+        await primeAudioElement();
+
+        setPreparationStage("Calibrating playback…");
+        await withTimeout(calibrateStartupBias(), 20000, "Playback calibration timeout");
+        const preparationElapsedMs = Math.round(highResNowMs() - preparationAttemptStartedAtMs);
+        lastPreparationOutcome = `success${preparationAttemptCount > 1 ? ` on retry ${preparationAttemptCount}` : ""} · gesture-bound output probe · ${preparationElapsedMs} ms`;
+        updateTimingProbe();
+        clearPreparationStatusTimer();
+
+        const startTimeMs = new Date(startInput.value).getTime();
+        const offsetSec = (syncedNowMs() - startTimeMs) / 1000;
+
+        scheduledAnchorMs = startTimeMs;
+
+        if(offsetSec < 0){
+          await startPreshowLoop();
+          beginCountdown(startTimeMs);
+          setStatus(preshowPlaying ? "Pre-show playing…" : "Downloading…");
+        }else{
+          stopPreshowImmediately();
+          setCountdown("");
+          setStatus("Tap Begin to join");
+          waitingForManualStart = true;
+          showStartNow();
+          setDebug(`${lastClockSyncDebug} · Start time is already in the past; Begin will jump to the correct offset.`);
+        }
+      }catch(err){
+        const preparationElapsedMs = preparationAttemptStartedAtMs == null ? null : Math.round(highResNowMs() - preparationAttemptStartedAtMs);
+        const failedStage = currentPreparationStage || "unknown stage";
+        lastPreparationOutcome = `failed at ${failedStage}${preparationElapsedMs == null ? "" : ` after ${preparationElapsedMs} ms`} · attempt ${preparationAttemptCount}`;
+        updateTimingProbe();
+        clearPreparationStatusTimer();
+        stopPreshowImmediately();
+
+        // iOS/Safari can occasionally leave the media/output path half-awake on
+        // the first preparation pass. Treat one failure as a warm-up event, not
+        // an audience-facing failure. Retry the complete preparation once after
+        // a short settling interval; attempt 2 also gets a longer output probe.
+        if(preparationAttemptCount < 2){
+          delegatedRetry = true;
+          setStatus("Preparing…");
+          setDebug(`Preparation attempt 1 stalled at ${failedStage}: ${err.message} · retrying automatically…`);
+          await new Promise(resolve=>setTimeout(resolve, 400));
+          return await handlePrepare(true);
+        }
+
+        setStatus("Preparation failed — tap Begin to retry");
+        setDebug(`Preparation failed at ${failedStage}: ${err.message}`);
+      }finally{
+        clearPreparationStatusTimer();
+        if(!delegatedRetry && !startAttempted){
+          playButton.disabled = false;
+          playButton.textContent = "Begin";
+        }
+      }
+    }
+
+    async function handleManualStart(){
+      if(scheduledAnchorMs == null){
+        setStatus("Tap Begin first");
+        return;
+      }
+
+      startNowButton.disabled = true;
+
+      try{
+        const started = await startPlaybackAtCurrentCorrectOffset();
+
+        if(!started){
+          showStartNow();
+        }
+      }catch(err){
+        setStatus("Start failed");
+        setDebug(`Manual start failed: ${err.message}`);
+        showStartNow();
+      }finally{
+        startNowButton.disabled = false;
+      }
+    }
+
+    diagnosticsToggle.addEventListener("click", ()=>{
+      const isHidden = diagnosticsPanel.classList.toggle("hidden");
+      diagnosticsToggle.setAttribute("aria-expanded", String(!isHidden));
+      diagnosticsToggle.textContent = "info";
+    });
+
+    playButton.addEventListener("click", ()=>handlePrepare(false));
+    startNowButton.addEventListener("click", ()=>{
+      if(startNowMode === "resume"){
+        handleResumeTap();
+      }else{
+        handleManualStart();
+      }
+    });
+
+    audio.addEventListener("loadedmetadata", ()=>{
+      updateTransport();
+      setDebug(lastClockSyncDebug || "");
+    });
+
+    audio.addEventListener("durationchange", updateTransport);
+    audio.addEventListener("timeupdate", updateTransport);
+    audio.addEventListener("seeking", updateTransport);
+    audio.addEventListener("seeked", updateTransport);
+
+    audio.addEventListener("progress", ()=>{
+      updateTransport();
+
+      if(waitingForManualStart && scheduledAnchorMs != null){
+        const offsetSec = Math.max(0, (syncedNowMs() - scheduledAnchorMs) / 1000);
+        const bufferedEnd = getBufferedEndFor(offsetSec);
+        const bufferedAhead = Math.max(0, bufferedEnd - offsetSec);
+
+        if(offsetSec >= 1){
+          setDebug(`${lastClockSyncDebug} · Ready to seek/join at ${formatClockTime(offsetSec)}.`);
+        }else if(hasEnoughToStartAt(offsetSec)){
+          const coverage = getBufferedCoverage();
+          setStatus("Ready — tap Begin");
+          setDebug(`${lastClockSyncDebug} · Audio ready. Buffer ahead ${bufferedAhead.toFixed(1)}s · total buffered ${Math.round(coverage.percent)}%.`);
+        }else{
+          const coverage = getBufferedCoverage();
+          setDebug(`${lastClockSyncDebug} · Buffering. Buffer ahead ${bufferedAhead.toFixed(1)}s · total buffered ${Math.round(coverage.percent)}%.`);
+        }
+      }
+    });
+
+    audio.addEventListener("canplay", ()=>{
+      updateTransport();
+
+      if(waitingForManualStart && scheduledAnchorMs != null){
+        setStatus("Ready — tap Begin");
+      }
+    });
+
+    audio.addEventListener("waiting", ()=>{
+      if(!audio.ended && !audio.paused){
+        setStatus("Buffering…");
+      }
+    });
+
+    audio.addEventListener("stalled", ()=>{
+      if(!audio.ended && !audio.paused){
+        setStatus("Network/audio stalled");
+        setDebug("Phone may need more buffered audio before stable playback.");
+      }
+    });
+
+    audio.addEventListener("playing", ()=>{
+      if(pendingTimingOperation){
+        const op = pendingTimingOperation;
+        op.playingEventAtMs = highResNowMs();
+        op.residualAtPlayingSec = getCurrentDriftSec();
+        scheduleSettlingSamples(op);
+        if(op.kind === "start") scheduleObservedStartupCorrection(op);
+        finishTimingOperation(op);
+      }
+
+      clearInterruptionRecoveryTimer();
+      interruptionAwaitingTap = false;
+      if(startNowMode === "resume"){
+        startNowMode = "begin";
+        hideStartNow();
+      }
+      lockBeginButton();
+      setStatus("Playing");
+      updateTransport();
+    });
+
+    audio.addEventListener("pause", handleUnexpectedPerformancePause);
+
+    audio.addEventListener("ended", ()=>{
+      clearTimers();
+      clearPlaybackMonitors();
+      clearCrossfade();
+      resetPlaybackRate();
+      unfreezePerformanceClock();
+      stopPreshowImmediately();
+
+      waitingForManualStart = false;
+      startAttempted = false;
+
+      setCountdown("");
+      setStatus("Playback ended");
+      setDebug(lastClockSyncDebug || "");
+
+      showPlayer();
+      updateTransport();
+    });
+
+    audio.addEventListener("error", ()=>{
+      stopPreshowImmediately();
+      setStatus("Audio failed to load");
+      setDebug("Check custom domain, public bucket, CORS, and direct MP3 URL.");
+      unlockBeginButton();
+    });
+
+    preshowAudio.addEventListener("error", ()=>{
+      preshowPlaying = false;
+      setDebug(`${lastClockSyncDebug} · Pre-show audio failed to load.`);
+    });
+
+    function noteNetworkChange(){
+      updateDriftStats();
+
+      // During the performance, connectivity changes are deliberately ignored.
+      // Playback continues from the browser's ordinary media buffer/cache and
+      // the frozen monotonic show clock. No reload, resync, or seek is triggered.
+      if(performanceClockFrozen && !audio.paused && !audio.ended){
+        setDebug(`${lastClockSyncDebug || "Clock prepared"} · ${getNetworkResilienceText()} · Network changed to ${navigator.onLine ? "online" : "offline"}; playback untouched.`);
+      }
+    }
+
+    window.addEventListener("online", noteNetworkChange);
+    window.addEventListener("offline", noteNetworkChange);
+
+    document.addEventListener("visibilitychange", ()=>{
+      if(document.visibilityState === "visible" && performanceShouldBePlaying() && audio.paused){
+        scheduleAutomaticInterruptionRecovery("Returning to performance");
+      }
+    });
+
+    window.addEventListener("pageshow", ()=>{
+      if(performanceShouldBePlaying() && audio.paused){
+        scheduleAutomaticInterruptionRecovery("Returning to performance");
+      }
+    });
+
+    updateTransport();
+    updateDriftStats();
+    updateTimingProbe();
+  </script>
+</body>
+</html>
