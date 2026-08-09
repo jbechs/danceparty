@@ -210,6 +210,27 @@
 
     #glowResume.hidden{ display:none; }
 
+    #glowCountdown{
+      position:absolute;
+      inset:0;
+      z-index:1;
+      display:grid;
+      place-items:center;
+      pointer-events:none;
+      font-family:'Inter', system-ui, sans-serif;
+      font-size:clamp(4.5rem, 24vw, 11rem);
+      font-weight:600;
+      letter-spacing:-0.045em;
+      line-height:1;
+      font-variant-numeric:tabular-nums;
+      color:rgba(255,255,255,.94);
+      text-shadow:0 0 18px rgba(255,255,255,.18), 0 0 54px rgba(255,255,255,.10);
+      opacity:0;
+      transition:opacity 220ms ease;
+    }
+
+    #glowCountdown.visible{ opacity:1; }
+
   </style>
 </head>
 
@@ -218,6 +239,7 @@
   <div id="glowScreen" aria-hidden="true">
     <canvas id="glowCanvas"></canvas>
     <div id="glowVignette"></div>
+    <div id="glowCountdown" aria-hidden="true"></div>
     <button id="glowResume" class="hidden" type="button">Tap to resume sound</button>
   </div>
 
@@ -273,6 +295,7 @@
     const glowCanvas = document.getElementById("glowCanvas");
     const glowCtx = glowCanvas.getContext("2d", { alpha:false });
     const glowResume = document.getElementById("glowResume");
+    const glowCountdown = document.getElementById("glowCountdown");
     let glowActive = false;
     let glowFrame = null;
     let glowTapTimes = [];
@@ -433,10 +456,181 @@
       return `hsla(${((h%360)+360)%360} ${s}% ${l}% / ${a})`;
     }
 
+    function drawPreshowWind(nowMs, w, h){
+      // Preshow visual world: deliberately restrained and nearly monochrome.
+      // Abstract drifting currents suggest the quiet wind bed without competing
+      // with the saturated three-tribe reveal when the dance track begins.
+      const clock = nowMs / 1000;
+      const phase = glowVariant * Math.PI * 2;
+      const tx = glowTiltX * w * .035;
+      const ty = glowTiltY * h * .025;
+      const breath = .5 + .5 * Math.sin(clock * .16 + phase);
+
+      glowCtx.globalCompositeOperation = 'source-over';
+      glowCtx.fillStyle = '#07090c';
+      glowCtx.fillRect(0,0,w,h);
+
+      // Long soft currents drift horizontally at different speeds and heights.
+      glowCtx.globalCompositeOperation = 'screen';
+      const currents = [
+        { y:.26, speed:.026, width:.88, height:.17, light:26, alpha:.15 },
+        { y:.48, speed:-.019, width:1.02, height:.22, light:32, alpha:.12 },
+        { y:.70, speed:.014, width:.92, height:.19, light:22, alpha:.13 },
+        { y:.39, speed:-.010, width:.62, height:.12, light:40, alpha:.075 }
+      ];
+
+      for(let i=0;i<currents.length;i++){
+        const c=currents[i];
+        const wrap = w * 1.75;
+        const raw = ((clock * c.speed * w + phase * 53 + i * w * .41) % wrap + wrap) % wrap;
+        const x = raw - w*.48 + tx;
+        const y = h*c.y + Math.sin(clock*.10 + phase + i*1.7)*h*.035 + ty;
+        const rx = w*c.width;
+        const ry = h*c.height*(.88 + .14*breath);
+        const g=glowCtx.createRadialGradient(x,y,0,x,y,Math.max(rx,ry));
+        g.addColorStop(0, `hsla(210 16% ${c.light}% / ${c.alpha})`);
+        g.addColorStop(.38, `hsla(205 13% ${Math.max(10,c.light-5)}% / ${c.alpha*.62})`);
+        g.addColorStop(1, 'hsla(210 12% 10% / 0)');
+        glowCtx.fillStyle=g;
+        glowCtx.save();
+        glowCtx.translate(x,y);
+        glowCtx.scale(1, ry/rx);
+        glowCtx.beginPath();
+        glowCtx.arc(0,0,rx,0,Math.PI*2);
+        glowCtx.fill();
+        glowCtx.restore();
+      }
+
+      // A faint roaming veil keeps the screen alive without reading as colorful.
+      const vx=w*(.50 + .18*Math.sin(clock*.055 + phase*.7)) + tx*.5;
+      const vy=h*(.50 + .12*Math.cos(clock*.047 + phase)) + ty*.5;
+      const vr=Math.max(w,h)*.72;
+      const veil=glowCtx.createRadialGradient(vx,vy,0,vx,vy,vr);
+      veil.addColorStop(0, `rgba(205,215,225,${.035 + .025*breath})`);
+      veil.addColorStop(.55, 'rgba(150,165,180,.018)');
+      veil.addColorStop(1, 'rgba(120,140,160,0)');
+      glowCtx.fillStyle=veil;
+      glowCtx.fillRect(0,0,w,h);
+
+      // Very subtle edge lift: enough to feel like an object, not a webpage.
+      const edge=glowCtx.createRadialGradient(w*.5,h*.5,Math.min(w,h)*.30,w*.5,h*.5,Math.max(w,h)*.78);
+      edge.addColorStop(0,'rgba(185,200,215,0)');
+      edge.addColorStop(.78,'rgba(185,200,215,.008)');
+      edge.addColorStop(1,'rgba(185,200,215,.055)');
+      glowCtx.fillStyle=edge;
+      glowCtx.fillRect(0,0,w,h);
+    }
+
+    function drawLavaLamp(trackT, cue, beat, breath, clock, phase, energy, w, h){
+      // Base dance language: slow viscous lava-lamp bodies that pulse on the beat.
+      glowCtx.globalCompositeOperation='source-over';
+      glowCtx.fillStyle=hsl(cue.a+18, 70, 3 + 3*energy, 1);
+      glowCtx.fillRect(0,0,w,h);
+
+      const bodies=[];
+      for(let i=0;i<7;i++){
+        const speed=.06 + i*.012;
+        const wobble=clock*speed + phase*(.7+i*.13) + i*1.31;
+        const x=.5 + .34*Math.sin(wobble*1.13 + Math.sin(wobble*.41));
+        const y=.5 + .38*Math.cos(wobble*.91 + i*.7);
+        const rx=(.18 + .055*Math.sin(wobble*.73+i))*Math.max(w,h)*(1+.10*beat);
+        const ry=rx*(.62 + .20*Math.sin(wobble*.57+i*.9));
+        bodies.push({x:x*w,y:y*h,rx,ry,hue:i%2?cue.a:cue.b});
+      }
+
+      glowCtx.globalCompositeOperation='screen';
+      for(const b of bodies){
+        glowCtx.save();
+        glowCtx.translate(b.x,b.y);
+        glowCtx.scale(1,b.ry/b.rx);
+        const g=glowCtx.createRadialGradient(0,0,0,0,0,b.rx);
+        g.addColorStop(0,hsl(b.hue+18*beat,98,68,.90*energy));
+        g.addColorStop(.32,hsl(b.hue,96,56,.70*energy));
+        g.addColorStop(.72,hsl(b.hue-22,92,38,.22*energy));
+        g.addColorStop(1,hsl(b.hue,90,26,0));
+        glowCtx.fillStyle=g;
+        glowCtx.beginPath();
+        glowCtx.arc(0,0,b.rx,0,Math.PI*2);
+        glowCtx.fill();
+        glowCtx.restore();
+      }
+
+      // Viscous central merge/split field.
+      const cx=w*(.5+.08*Math.sin(clock*.09+phase));
+      const cy=h*(.5+.08*Math.cos(clock*.08+phase));
+      const r=Math.min(w,h)*(.22+.035*beat+.025*breath);
+      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,r*2.8);
+      core.addColorStop(0,`rgba(255,255,255,${.26+.20*beat})`);
+      core.addColorStop(.18,hsl(cue.a+32,92,74,.56));
+      core.addColorStop(.52,hsl(cue.b,100,58,.34));
+      core.addColorStop(1,hsl(cue.b,100,50,0));
+      glowCtx.fillStyle=core;
+      glowCtx.beginPath(); glowCtx.arc(cx,cy,r*2.8,0,Math.PI*2); glowCtx.fill();
+    }
+
+    function getMajorDropMode(trackT){
+      // Hand-picked large transformations based on the analyzed song structure.
+      const events=[
+        {t:31,d:5,m:'burst'},
+        {t:76,d:6,m:'tunnel'},
+        {t:100,d:6,m:'invert'},
+        {t:155,d:7,m:'burst'},
+        {t:174,d:8,m:'prism'}
+      ];
+      for(const e of events){ if(trackT>=e.t && trackT<e.t+e.d) return {mode:e.m,p:(trackT-e.t)/e.d}; }
+      return null;
+    }
+
+    function drawMajorDrop(drop,cue,beat,clock,phase,w,h){
+      const p=drop.p;
+      if(drop.mode==='burst'){
+        glowCtx.globalCompositeOperation='screen';
+        glowCtx.save(); glowCtx.translate(w/2,h/2);
+        for(let i=0;i<26;i++){
+          const a=(i/26)*Math.PI*2 + clock*.05;
+          const len=Math.max(w,h)*(.18 + p*.75);
+          glowCtx.strokeStyle=hsl(cue.a+i*9,100,62,.26+.45*(1-p));
+          glowCtx.lineWidth=3+8*beat;
+          glowCtx.beginPath(); glowCtx.moveTo(Math.cos(a)*20,Math.sin(a)*20); glowCtx.lineTo(Math.cos(a)*len,Math.sin(a)*len); glowCtx.stroke();
+        }
+        glowCtx.restore();
+      } else if(drop.mode==='tunnel'){
+        glowCtx.globalCompositeOperation='screen';
+        for(let i=0;i<10;i++){
+          const q=(i/10 + p*.9)%1;
+          const rr=Math.min(w,h)*(0.06 + q*.72);
+          glowCtx.strokeStyle=hsl(cue.b+i*14,100,64,.15+.55*(1-q));
+          glowCtx.lineWidth=2+10*(1-q);
+          glowCtx.beginPath(); glowCtx.arc(w/2,h/2,rr,0,Math.PI*2); glowCtx.stroke();
+        }
+      } else if(drop.mode==='invert'){
+        glowCtx.globalCompositeOperation='difference';
+        glowCtx.fillStyle=`rgba(255,255,255,${.45+.35*beat})`;
+        glowCtx.fillRect(0,0,w,h);
+      } else if(drop.mode==='prism'){
+        glowCtx.globalCompositeOperation='screen';
+        const bands=8;
+        for(let i=0;i<bands;i++){
+          const x=(i/bands)*w;
+          const ww=w/bands+2;
+          glowCtx.fillStyle=hsl(cue.a+i*38+clock*18,100,55,.18+.42*beat);
+          glowCtx.fillRect(x,0,ww,h);
+        }
+      }
+    }
+
     function drawGlow(nowMs){
       if(!glowActive) return;
       const w = window.innerWidth;
       const h = window.innerHeight;
+
+      const inPreshow = preshowPlaying && audio.paused && scheduledAnchorMs != null && syncedNowMs() < scheduledAnchorMs;
+      if(inPreshow){
+        drawPreshowWind(nowMs, w, h);
+        glowFrame=requestAnimationFrame(drawGlow);
+        return;
+      }
+
       const trackT = glowTrackTime();
       const cue = cueAt(trackT);
       const beatState = beatStateAt(trackT);
@@ -452,87 +646,23 @@
       const hueB = glowPalette.b + cue.hueShift * .55;
       const hueC = glowPalette.c - cue.hueShift * .30;
 
-      glowCtx.globalCompositeOperation = 'source-over';
-      glowCtx.fillStyle = hsl(hueC, 82, 5 + 5*energy, 1);
+      drawLavaLamp(trackT, cue, beat, breath, clock, phase, energy, w, h);
+
+      const majorDrop=getMajorDropMode(trackT);
+      if(majorDrop){
+        drawMajorDrop(majorDrop,cue,beat,clock,phase,w,h);
+      }
+
+      // Whole-screen pulse on every strong beat: subtle normally, emphatic during peaks.
+      glowCtx.globalCompositeOperation='screen';
+      glowCtx.fillStyle=hsl(cue.a+40,100,72,.025 + .07*beat*energy);
       glowCtx.fillRect(0,0,w,h);
 
-      // Tilt translates the whole light-world, giving the phone a liquid/slosh response.
-      const tx = glowTiltX * w * .12;
-      const ty = glowTiltY * h * .10;
-
-      const blobs = [
-        { hue:hueA, x:.48 + .16*Math.sin(clock*.27 + phase),     y:.42 + .13*Math.cos(clock*.23 + phase*.7),  r:.62 },
-        { hue:hueB, x:.34 + .21*Math.cos(clock*.19 + phase*1.4), y:.60 + .15*Math.sin(clock*.29 + phase*.4),  r:.56 },
-        { hue:hueC, x:.69 + .18*Math.sin(clock*.17 + phase*2.1), y:.63 + .18*Math.cos(clock*.18 + phase*1.2), r:.46 }
-      ];
-
-      glowCtx.globalCompositeOperation = 'screen';
-      for(const b of blobs){
-        const x=b.x*w + tx, y=b.y*h + ty, r=b.r*Math.max(w,h)*(.91 + .07*breath + .05*beat);
-        const g=glowCtx.createRadialGradient(x,y,0,x,y,r);
-        g.addColorStop(0, hsl(b.hue + 12*beat, 100, 68, .92*energy));
-        g.addColorStop(.22, hsl(b.hue, 100, 56, .72*energy));
-        g.addColorStop(.62, hsl(b.hue-16, 96, 42, .28*energy));
-        g.addColorStop(1, hsl(b.hue, 94, 28, 0));
-        glowCtx.fillStyle=g;
-        glowCtx.fillRect(x-r,y-r,r*2,r*2);
-      }
-
-      // Bright perimeter: visually swallows browser chrome instead of framing the webpage.
-      const edgePower = .16 + .20*energy + .22*beat + .18*phraseHit;
-      const edge=glowCtx.createRadialGradient(w*.5,h*.5,Math.min(w,h)*.22,w*.5,h*.5,Math.max(w,h)*.78);
-      edge.addColorStop(0, hsl(glowPalette.edge + cue.hueShift, 100, 58, 0));
-      edge.addColorStop(.72, hsl(glowPalette.edge + cue.hueShift, 100, 58, .03));
-      edge.addColorStop(1, hsl(glowPalette.edge + cue.hueShift, 100, 64, edgePower));
-      glowCtx.fillStyle=edge;
-      glowCtx.fillRect(0,0,w,h);
-
-      // Central living orb, now actually breathing with the detected house beat.
-      const cx=w*.50 + tx*.55 + w*.025*Math.sin(clock*.37+phase);
-      const cy=h*.50 + ty*.55 + h*.020*Math.cos(clock*.33+phase);
-      const rr=Math.min(w,h)*(.17 + .050*beat + .016*breath);
-      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,rr*2.8);
-      core.addColorStop(0, `rgba(255,255,255,${.76 + .20*beat})`);
-      core.addColorStop(.10, hsl(hueA + 35, 94, 82, .70));
-      core.addColorStop(.38, hsl(hueB, 100, 60, .40));
-      core.addColorStop(1, hsl(hueB, 100, 45, 0));
-      glowCtx.fillStyle=core;
-      glowCtx.beginPath();
-      glowCtx.arc(cx,cy,rr*2.8,0,Math.PI*2);
-      glowCtx.fill();
-
-      // Orbiting sparks accelerate visually on beat attacks.
-      for(let i=0;i<6;i++){
-        const a=clock*(.30+.045*i)+phase+i*1.047;
-        const rad=Math.min(w,h)*(.24+.032*i);
-        const sx=cx+Math.cos(a)*rad;
-        const sy=cy+Math.sin(a*1.07)*rad*.72;
-        const sr=2.4 + 4.2*energy + 4.0*beat;
-        glowCtx.fillStyle=hsl([hueA,hueB,hueC][i%3] + i*9, 100, 84, .48+.38*energy);
-        glowCtx.beginPath();
-        glowCtx.arc(sx,sy,sr,0,Math.PI*2);
-        glowCtx.fill();
-      }
-
-      // Every 16 beats, all three tribes make a shared whole-screen color gesture.
-      if(phraseHit > .025){
+      // White-out swell in the last six seconds of the 3:22 track.
+      if(trackT >= 196 && trackT < 202){
+        const finale = Math.min(1, (trackT-196)/6);
         glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=hsl(hueA + 22, 100, 60, phraseHit * (.11 + .12*cue.e));
-        glowCtx.fillRect(0,0,w,h);
-      }
-
-      // Section entrances get a larger synchronized bloom, derived from actual track structure.
-      if(transitionHit > .01){
-        glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=`rgba(255,255,255,${transitionHit*.42})`;
-        glowCtx.fillRect(0,0,w,h);
-      }
-
-      // Final six seconds: one communal luminous release across all palettes.
-      if(trackT >= 196 && trackT < 202.64){
-        const finale = Math.min(1, (trackT-196)/6.64);
-        glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.32})`;
+        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.30})`;
         glowCtx.fillRect(0,0,w,h);
       }
 
@@ -554,6 +684,21 @@
       glowScreen.classList.remove('active');
       glowScreen.setAttribute('aria-hidden','true');
       glowResume.classList.add('hidden');
+      setGlowCountdown(null);
+    }
+
+
+    function setGlowCountdown(msRemaining){
+      if(!glowCountdown) return;
+      if(msRemaining == null || msRemaining <= 0){
+        glowCountdown.textContent = "";
+        glowCountdown.classList.remove('visible');
+        glowCountdown.setAttribute('aria-hidden','true');
+        return;
+      }
+      glowCountdown.textContent = formatCountdown(msRemaining);
+      glowCountdown.classList.add('visible');
+      glowCountdown.setAttribute('aria-hidden','false');
     }
 
     function showGlowResume(show){
@@ -1047,7 +1192,7 @@
       const m = Math.floor(s / 60);
       const sec = s % 60;
 
-      return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+      return `${m}:${String(sec).padStart(2, "0")}`;
     }
 
     function formatClockTime(sec){
@@ -2266,6 +2411,7 @@
       startAttempted = true;
 
       hideStartNow();
+      setGlowCountdown(null);
       setCountdown("");
       setStatus("Playing");
       setDebug(`${lastClockSyncDebug || "Clock prepared"} · output latency ${outputLatencySupported ? Math.round(outputLatencySec * 1000) + " ms" : "unavailable"} · warm-transfer bias ${Math.round(startupCalibrationBiasSec * 1000)} ms · output latency diagnostic only · v4.98 observes settled startup drift at 1.0/1.5/2.0 s and corrects 100% of a stable plateau once; no platform sniffing; generic controller stands down during observation and post-seek settling · drift excludes output latency · ${getNetworkResilienceText()} · Network changes ignored during performance.`);
@@ -2323,11 +2469,13 @@
 
         if(remaining <= 0){
           clearTimers();
+          setGlowCountdown(null);
           setCountdown("Starting now");
           tryAutomaticStart();
           return;
         }
 
+        setGlowCountdown(remaining);
         setCountdown(`Starting in ${formatCountdown(remaining)}`);
         setStatus(preshowPlaying ? "Pre-show playing…" : "Downloading…");
 
@@ -2338,6 +2486,7 @@
 
       countdownTimer = setTimeout(()=>{
         clearTimers();
+        setGlowCountdown(null);
         setCountdown("Starting now");
         tryAutomaticStart();
       }, Math.max(0, startTimeMs - syncedNowMs()));
@@ -2451,6 +2600,7 @@
           setStatus(preshowPlaying ? "Pre-show playing…" : "Downloading…");
         }else{
           stopPreshowImmediately();
+          setGlowCountdown(null);
           setCountdown("");
           setStatus("Tap Begin to join");
           waitingForManualStart = true;
@@ -2624,6 +2774,7 @@
       waitingForManualStart = false;
       startAttempted = false;
 
+      setGlowCountdown(null);
       setCountdown("");
       setStatus("Playback ended");
       setDebug(lastClockSyncDebug || "");
