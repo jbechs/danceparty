@@ -198,6 +198,23 @@
       mix-blend-mode:multiply;
     }
 
+    #glowCountdown{
+      position:absolute;
+      left:50%;
+      top:max(7vh,28px);
+      transform:translateX(-50%);
+      z-index:3;
+      min-width:12ch;
+      text-align:center;
+      font-size:clamp(1.35rem,5vw,2.2rem);
+      font-weight:700;
+      letter-spacing:.02em;
+      color:rgba(255,255,255,.94);
+      font-variant-numeric:tabular-nums;
+      text-shadow:0 2px 18px rgba(0,0,0,.55);
+      pointer-events:none;
+    }
+
     #glowResume{
       position:absolute;
       left:50%;
@@ -225,6 +242,7 @@
   <div id="glowScreen" aria-hidden="true">
     <canvas id="glowCanvas"></canvas>
     <div id="glowVignette"></div>
+    <div id="glowCountdown" aria-live="polite"></div>
     <button id="glowResume" class="hidden" type="button">Tap to resume sound</button>
   </div>
 
@@ -266,6 +284,7 @@
     const startInput = document.getElementById("startTime");
     const statusEl = document.getElementById("status");
     const countdownEl = document.getElementById("countdown");
+    const glowCountdownEl = document.getElementById("glowCountdown");
     const diagnosticsToggle = document.getElementById("diagnosticsToggle");
     const diagnosticsPanel = document.getElementById("diagnosticsPanel");
     const transportEl = document.getElementById("transport");
@@ -691,6 +710,7 @@
 
     function setCountdown(msg){
       countdownEl.textContent = msg;
+      glowCountdownEl.textContent = msg;
     }
 
     function setDebug(msg){
