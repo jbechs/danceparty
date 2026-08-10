@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="theme-color" content="#050208">
+  <meta name="color-scheme" content="dark">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
@@ -270,7 +272,59 @@
 
     #glowResume.hidden{ display:none; }
 
-  </style>
+  
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100%;
+      min-height: 100%;
+      background: #050208 !important;
+      color-scheme: dark;
+      overscroll-behavior: none;
+    }
+
+    html {
+      min-height: 100%;
+      background-color: #050208 !important;
+    }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      overflow: hidden;
+      background-color: #050208 !important;
+    }
+
+    /* Keep the browser's exposed/overscroll canvas from flashing white. */
+    :root {
+      background: #050208 !important;
+    }
+
+    #glowScreen,
+    #glowCanvas {
+      background: #050208 !important;
+    }
+
+    /* Fullscreen element must itself paint the entire viewport. */
+    :fullscreen,
+    :-webkit-full-screen {
+      width: 100vw !important;
+      height: 100vh !important;
+      background: #050208 !important;
+    }
+
+    :fullscreen #glowScreen,
+    :-webkit-full-screen #glowScreen {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      min-height: 100vh !important;
+      min-height: 100dvh !important;
+      background: #050208 !important;
+    }
+
+</style>
 </head>
 
 <body>
@@ -286,7 +340,7 @@
   <main class="container">
     <div class="header">
       <h1>dance party now</h1>
-      <div class="subtitle">crank all devices &amp; turn off lights</div>
+      <div class="subtitle">crank all devices & turn off lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -319,6 +373,19 @@
     const playButton = document.getElementById("playButton");
     const startNowButton = document.getElementById("startNowButton");
     const startInput = document.getElementById("startTime");
+
+    // On each fresh load, default the curtain to the first whole-minute boundary
+    // that is strictly more than 60 seconds away.
+    // Example: 8:42:15 -> 8:44:00; 8:42:00 -> 8:44:00.
+    function setDefaultStartTime(){
+      const nowMs = Date.now();
+      const targetMs = Math.ceil((nowMs + 60001) / 60000) * 60000;
+      const d = new Date(targetMs);
+      const pad = n => String(n).padStart(2, "0");
+      startInput.value =
+        `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` +
+        `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
     const statusEl = document.getElementById("status");
     const countdownEl = document.getElementById("countdown");
     const glowCountdownEl = document.getElementById("glowCountdown");
@@ -361,42 +428,55 @@
     // live audio detections: every handset evaluates the same score from track time.
     const GLOW_CUES = [
       // time, hue A, hue B, base energy, motion multiplier
-      { t:0.000,   a:195, b:315, e:.58, m:.62 }, // opening: previous morphing look
-      { t:23.522,  a:214, b:326, e:.64, m:.72 },
-      { t:36.827,  a:325, b:24,  e:.74, m:.88 }, // first clear lift
-      { t:48.437,  a:92,  b:205, e:.82, m:1.00 },
-      { t:56.000,  a:272, b:332, e:.50, m:.62 }, // withdrawal
-      { t:69.730,  a:328, b:28,  e:.86, m:1.10 }, // first release
-      { t:81.583,  a:272, b:332, e:.66, m:.82 }, // interruption / suspension
-      { t:98.754,  a:18,  b:350, e:.96, m:1.22 }, // second hit
-      { t:113.650, a:258, b:318, e:.52, m:.66 }, // long suspension
-      { t:151.986, a:184, b:226, e:.78, m:1.02 }, // ascent begins
-      { t:163.596, a:292, b:42,  e:.94, m:1.28 }, // pressure before major drop
-      { t:169.900, a:300, b:70,  e:1.28,m:1.72 }, // BIG DROP
-      { t:180.291, a:34,  b:196, e:1.34,m:1.88 }, // full power
-      { t:193.840, a:316, b:86,  e:1.42,m:2.00 }, // final drive
-      { t:200.980, a:205, b:330, e:1.05,m:1.25 }, // final bloom
+      // Keep the opening beautiful and controlled; each return of the beat earns more power.
+      { t:0.000,   a:195, b:315, e:.52, m:.56 },
+      { t:23.522,  a:214, b:326, e:.60, m:.66 },
+      { t:36.827,  a:325, b:24,  e:.78, m:.92 }, // first lift
+      { t:48.437,  a:92,  b:205, e:.88, m:1.08 },
+      { t:56.000,  a:272, b:332, e:.43, m:.54 }, // withdrawal
+      { t:69.730,  a:328, b:28,  e:.98, m:1.24 }, // first release
+      { t:81.583,  a:272, b:332, e:.60, m:.74 }, // interruption / suspension
+      { t:98.754,  a:18,  b:350, e:1.12, m:1.42 }, // second hit
+      { t:113.650, a:258, b:318, e:.46, m:.58 }, // long suspension
+      { t:151.986, a:184, b:226, e:.82, m:1.08 }, // ascent begins
+      { t:158.000, a:212, b:282, e:.94, m:1.24 },
+      { t:163.596, a:292, b:42,  e:1.14, m:1.52 }, // pressure before major drop
+      { t:169.900, a:300, b:70,  e:1.58, m:2.08 }, // BIG DROP
+      { t:180.291, a:34,  b:196, e:1.72, m:2.30 }, // full power
+      { t:193.840, a:316, b:86,  e:1.90, m:2.56 }, // final drive
+      { t:200.980, a:205, b:330, e:1.44, m:1.72 }, // final bloom
       { t:202.600, a:250, b:300, e:.24, m:.32 }
     ];
 
     const GLOW_DROP_EVENTS = [
-      { t:36.827,  s:.34 },
-      { t:48.437,  s:.28 },
-      { t:69.730,  s:.50 },
-      { t:81.583,  s:.30 },
-      { t:98.754,  s:.56 },
-      { t:151.986, s:.30 },
-      { t:163.596, s:.42 },
-      { t:169.900, s:1.00 },
-      { t:180.291, s:.58 },
-      { t:193.840, s:.62 },
-      { t:200.980, s:.70 }
+      { t:36.827,  s:.40 },
+      { t:48.437,  s:.34 },
+      { t:69.730,  s:.72 },
+      { t:81.583,  s:.34 },
+      { t:98.754,  s:.82 },
+      { t:151.986, s:.38 },
+      { t:163.596, s:.58 },
+      { t:169.900, s:1.34 },
+      { t:180.291, s:.88 },
+      { t:193.840, s:1.00 },
+      { t:200.980, s:.90 }
+    ];
+
+    // Percussive passages get a distinct boost: the same organism becomes more
+    // physical rather than introducing a new graphic vocabulary.
+    const GLOW_PERCUSSIVE_SECTIONS = [
+      { start:36.827, end:55.900, s:.20 },
+      { start:69.730, end:81.450, s:.38 },
+      { start:98.754, end:113.500, s:.48 },
+      { start:163.596,end:169.860, s:.34 },
+      { start:169.900,end:200.900, s:.82 }
     ];
 
     function resizeGlow(){
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = Math.max(1, window.innerWidth);
-      const h = Math.max(1, window.innerHeight);
+      const vv = window.visualViewport;
+      const w = Math.max(1, vv ? vv.width : window.innerWidth);
+      const h = Math.max(1, vv ? vv.height : window.innerHeight);
       glowCanvas.width = Math.round(w * dpr);
       glowCanvas.height = Math.round(h * dpr);
       glowCanvas.style.width = `${w}px`;
@@ -422,22 +502,58 @@
 
     async function requestGlowFullscreen(){
       let entered = false;
-      try{
-        const el = document.documentElement;
-        const request =
-          el.requestFullscreen ||
-          el.webkitRequestFullscreen ||
-          el.webkitRequestFullScreen ||
-          el.msRequestFullscreen;
 
-        if(typeof request === "function"){
-          const result = request.call(el);
-          if(result && typeof result.then === "function") await result;
+      // Paint all potentially exposed browser/document areas dark before requesting
+      // fullscreen, so unsupported/mobile browsers do not reveal a bright page edge.
+      document.documentElement.style.backgroundColor = "#050208";
+      document.body.style.backgroundColor = "#050208";
+      glowScreen.style.backgroundColor = "#050208";
+
+      try{
+        // Fullscreen the visual surface itself rather than the entire document.
+        // On browsers that support the modern API, ask to hide navigation UI.
+        const el = glowScreen;
+        if(typeof el.requestFullscreen === "function"){
+          try{
+            await el.requestFullscreen({ navigationUI: "hide" });
+          }catch(_optsErr){
+            const result = el.requestFullscreen();
+            if(result && typeof result.then === "function") await result;
+          }
           entered = true;
+        }else{
+          const webkitRequest =
+            el.webkitRequestFullscreen ||
+            el.webkitRequestFullScreen;
+          if(typeof webkitRequest === "function"){
+            const result = webkitRequest.call(el);
+            if(result && typeof result.then === "function") await result;
+            entered = true;
+          }else if(typeof document.documentElement.webkitRequestFullscreen === "function"){
+            const result = document.documentElement.webkitRequestFullscreen();
+            if(result && typeof result.then === "function") await result;
+            entered = true;
+          }
         }
       }catch(_err){
-        // Fullscreen is optional by design.
+        // iPhone Safari may refuse arbitrary-element fullscreen. Keep the visual
+        // pinned edge-to-edge and dark; playback must never depend on fullscreen.
       }
+
+      // Best available immersive viewport even when true fullscreen is unavailable.
+      glowScreen.style.position = "fixed";
+      glowScreen.style.inset = "0";
+      glowScreen.style.width = "100vw";
+      glowScreen.style.height = "100dvh";
+      glowScreen.style.minHeight = "100vh";
+
+      // On mobile browsers this encourages collapse of URL/tool bars after the tap.
+      try{
+        window.scrollTo({ top: 1, left: 0, behavior: "instant" });
+      }catch(_err){
+        window.scrollTo(0, 1);
+      }
+
       requestGlowWakeLock();
       return entered;
     }
@@ -507,14 +623,37 @@
       return Math.min(1.45,sum);
     }
 
+    function percussiveDrive(t){
+      let d=0;
+      for(const s of GLOW_PERCUSSIVE_SECTIONS){
+        if(t>=s.start && t<s.end) d=Math.max(d,s.s);
+      }
+      return d;
+    }
+
+    function flashEnvelope(t){
+      // Very short, colored flashes only on scored impacts. Back-half flashes are
+      // deliberately more forceful, but never use linework or filament graphics.
+      let sum=0;
+      for(const ev of GLOW_DROP_EVENTS){
+        const dt=t-ev.t;
+        if(dt>=0 && dt<.34){
+          const backHalf = ev.t >= 151.986 ? 1.45 : 1.0;
+          sum += ev.s*backHalf*Math.exp(-dt*12.5);
+        }
+      }
+      return Math.min(2.1,sum);
+    }
+
     function hsl(h,s,l,a=1){
       return `hsla(${((h%360)+360)%360} ${s}% ${l}% / ${a})`;
     }
 
     function drawGlow(nowMs){
       if(!glowActive) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const vv = window.visualViewport;
+      const w = vv ? vv.width : window.innerWidth;
+      const h = vv ? vv.height : window.innerHeight;
       const trackT = glowTrackTime();
       const cue = cueBlendAt(trackT);
       // Once the performance begins, animation time itself comes from trackT.
@@ -524,9 +663,12 @@
       const beatKick = beatEnvelope(trackT);
       const barKick = barEnvelope(trackT);
       const dropKick = dropEnvelope(trackT);
+      const percDrive = percussiveDrive(trackT);
+      const flashKick = flashEnvelope(trackT);
+      const backHalf = Math.max(0, Math.min(1, (trackT-113.650)/(169.900-113.650)));
       const breath = .5 + .5 * Math.sin(clock * .52 + phase);
-      const pulse = Math.min(1.6, .18 + .68*beatKick + .28*barKick + .62*dropKick);
-      const energy = cue.e * (.72 + .15*breath + .26*beatKick + .20*barKick + .58*dropKick);
+      const pulse = Math.min(2.2, .15 + (.62+.38*percDrive)*beatKick + (.24+.34*percDrive)*barKick + .82*dropKick);
+      const energy = cue.e * (.68 + .14*breath + (.22+.26*percDrive)*beatKick + (.16+.26*percDrive)*barKick + .72*dropKick);
 
       glowCtx.globalCompositeOperation = 'source-over';
       // Deep-purple luminous field beneath every state.
@@ -555,7 +697,7 @@
         return;
       }
 
-      // SHOW: fractal metamorphosis field.
+      // SHOW: fractal metamorphosis field — INTENSE BUILD edition.
       // No strokes, filaments, outlines, or line graphics. Every visible form is temporary:
       // it folds, buds, splits, erodes, and becomes another form.
       const baseHueA = cue.a + glowPaletteOffset;
@@ -566,9 +708,9 @@
       glowCtx.fillStyle='#000';
       glowCtx.fillRect(0,0,w,h);
 
-      const pulseA=Math.min(1.7,.18 + .72*beatKick + .32*barKick + .62*dropKick);
+      const pulseA=Math.min(2.35,.14 + (.70+.48*percDrive)*beatKick + (.30+.42*percDrive)*barKick + .88*dropKick);
       const pulseB=.5+.5*Math.sin(clock*(.68*cue.m)+phase*.47);
-      const pressure=.90 + .075*pulseB + .11*pulseA + .11*dropKick;
+      const pressure=.88 + .07*pulseB + .13*pulseA + .18*dropKick + .07*backHalf;
 
       // Recursive morph fields: broad soft masks that continually change topology.
       // Each field is built from layered deformed lobes, not fixed primitives.
@@ -595,7 +737,7 @@
 
         // Build several translucent child forms whose frequencies drift over time.
         // As frequencies cross, one blob appears to become another.
-        const layerCount = cue.e > 1.15 ? 9 : (cue.e > .90 ? 8 : 6);
+        const layerCount = cue.e > 1.70 ? 13 : (cue.e > 1.35 ? 11 : (cue.e > 1.00 ? 9 : 6));
         for(let layer=0;layer<layerCount;layer++){
           const t=layer/Math.max(1,layerCount-1);
           const f2=1.3 + .7*(.5+.5*Math.sin(clock*(.17*cue.m)+mi+layer*.6));
@@ -630,7 +772,7 @@
           glowCtx.closePath();
 
           const hue=m.h + 110*t + 42*Math.sin(clock*.15+layer+mi);
-          glowCtx.fillStyle=hsl(hue,100,56+.08*100*pulseA,.035+.035*(1-t));
+          glowCtx.fillStyle=hsl(hue,100,Math.min(82,54+10*pulseA+8*backHalf),.034+.040*(1-t)+.010*percDrive);
           glowCtx.shadowBlur=minDim*(.07+.04*(1-t));
           glowCtx.shadowColor=hsl(hue+30,100,62,.34);
           glowCtx.fill();
@@ -658,7 +800,7 @@
       // Soft luminous buds replace all filament/line vocabulary. Each bud is a
       // blurred volumetric glow with no stroke, outline, arc, or connecting trace.
       glowCtx.globalCompositeOperation='screen';
-      const budCount = cue.e > 1.15 ? 18 : (cue.e > .90 ? 13 : 9);
+      const budCount = cue.e > 1.70 ? 30 : (cue.e > 1.35 ? 24 : (cue.e > 1.00 ? 17 : 9));
       for(let bud=0;bud<budCount;bud++){
         const u=(bud+.5)/budCount;
         const a=bud*2.399963229728653 + phase*.35 + .42*Math.sin(clock*(.16*cue.m)+bud*.73);
@@ -666,12 +808,12 @@
         const bx=w/2 + Math.cos(a)*orbit + Math.sin(clock*(.22*cue.m)+bud)*minDim*.045;
         const by=h/2 + Math.sin(a)*orbit*.74 + Math.cos(clock*(.19*cue.m)+bud*.6)*minDim*.040;
         const br=minDim*(.030 + .040*(.5+.5*Math.sin(clock*(.39*cue.m)+bud*1.17)))
-          *(1+.34*pulseA+.28*dropKick);
+          *(1+.44*pulseA+.40*dropKick+.10*backHalf);
         const hue=baseHueA+bud*31+42*Math.sin(clock*(.11*cue.m)+bud);
         const bg=glowCtx.createRadialGradient(bx,by,0,bx,by,br*3.2);
-        bg.addColorStop(0,hsl(hue+24,100,70,.10+.10*pulseA+.11*dropKick));
-        bg.addColorStop(.26,hsl(hue,100,58,.075+.055*pulseB));
-        bg.addColorStop(.62,hsl(hue+72,98,48,.028+.026*pulseA));
+        bg.addColorStop(0,hsl(hue+24,100,Math.min(88,68+8*backHalf+6*flashKick),.10+.13*pulseA+.15*dropKick+.04*percDrive));
+        bg.addColorStop(.26,hsl(hue,100,Math.min(72,57+8*backHalf),.075+.065*pulseB+.025*percDrive));
+        bg.addColorStop(.62,hsl(hue+72,98,Math.min(62,47+7*backHalf),.028+.032*pulseA));
         bg.addColorStop(1,hsl(hue,96,38,0));
         glowCtx.fillStyle=bg;
         glowCtx.fillRect(bx-br*3.2,by-br*3.2,br*6.4,br*6.4);
@@ -682,22 +824,44 @@
       const surge=Math.pow(.5+.5*Math.sin(clock*(.81*cue.m)+phase*.23),2.0);
       const sx=w*(.5+.20*Math.sin(clock*(.25*cue.m)+phase));
       const sy=h*(.5+.18*Math.cos(clock*(.21*cue.m)+phase*.8));
-      const sr=minDim*(.46+.18*surge);
+      const sr=minDim*(.44+.20*surge+.10*backHalf+.09*dropKick);
       const sg=glowCtx.createRadialGradient(sx,sy,0,sx,sy,sr);
-      sg.addColorStop(0,hsl(baseHueA+35,100,70,.04+.08*surge));
-      sg.addColorStop(.38,hsl(baseHueB+75,100,56,.03+.06*surge));
-      sg.addColorStop(.72,hsl(baseHueA+150,100,46,.015+.03*surge));
+      sg.addColorStop(0,hsl(baseHueA+35,100,Math.min(90,70+12*backHalf),.04+.10*surge+.05*backHalf));
+      sg.addColorStop(.38,hsl(baseHueB+75,100,Math.min(74,56+10*backHalf),.03+.075*surge+.035*backHalf));
+      sg.addColorStop(.72,hsl(baseHueA+150,100,Math.min(62,46+9*backHalf),.015+.038*surge));
       sg.addColorStop(1,hsl(baseHueA,100,38,0));
       glowCtx.fillStyle=sg;
       glowCtx.fillRect(sx-sr,sy-sr,sr*2,sr*2);
 
-      // Synchronized impact wash. It blooms in color rather than white, so a
-      // crowd of phones visibly "hits" the same musical drop without strobing.
-      if(dropKick > .012 || barKick > .12){
-        const impactAlpha = Math.min(.30, .025*barKick + .22*dropKick);
+      // Percussive isolation: in the beat-heavy passages, each kick briefly compresses
+      // the image into a brighter colored bloom. The back half gets markedly hotter.
+      if(percDrive > 0 && beatKick > .08){
+        const beatAlpha=Math.min(.24, (.018+.075*percDrive)*beatKick*(1+.65*backHalf));
         glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=hsl(baseHueB + 55*dropKick,100,58,impactAlpha);
+        glowCtx.fillStyle=hsl(baseHueA+28,100,Math.min(82,60+16*backHalf),beatAlpha);
         glowCtx.fillRect(0,0,w,h);
+      }
+
+      // Scored drop flashes. These are full-field color/light events, not white linework.
+      if(flashKick > .01 || dropKick > .012 || barKick > .12){
+        const impactAlpha=Math.min(.62,
+          .018*barKick +
+          (.16+.12*backHalf)*dropKick +
+          (.14+.13*backHalf)*flashKick);
+        glowCtx.globalCompositeOperation='screen';
+        glowCtx.fillStyle=hsl(baseHueB + 48*dropKick,100,Math.min(92,60+18*backHalf+8*flashKick),impactAlpha);
+        glowCtx.fillRect(0,0,w,h);
+
+        // A soft central blast gives the largest drops a physical expansion.
+        if(flashKick > .16){
+          const fr=minDim*(.52+.20*Math.min(1.4,flashKick));
+          const fg=glowCtx.createRadialGradient(w/2,h/2,0,w/2,h/2,fr);
+          fg.addColorStop(0,hsl(baseHueA+18,100,Math.min(94,76+8*backHalf),Math.min(.58,.16+.21*flashKick)));
+          fg.addColorStop(.34,hsl(baseHueB+36,100,Math.min(86,65+12*backHalf),Math.min(.40,.10+.15*flashKick)));
+          fg.addColorStop(1,hsl(baseHueB,100,55,0));
+          glowCtx.fillStyle=fg;
+          glowCtx.fillRect(w/2-fr,h/2-fr,fr*2,fr*2);
+        }
       }
 
       glowFrame=requestAnimationFrame(drawGlow);
@@ -2868,6 +3032,7 @@
       }
     });
 
+    setDefaultStartTime();
     updateTransport();
     updateDriftStats();
     updateTimingProbe();
