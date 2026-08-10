@@ -356,23 +356,15 @@
 
 
     #glowMirrorVideo{
-      /* Keep WebKit's video decoder/compositor genuinely active before native
-         fullscreen. The canvas sits above it, so the audience never sees this
-         mirror in the normal page presentation. */
-      position:fixed;
-      inset:0;
-      width:100vw;
-      height:100dvh;
-      opacity:1;
+      position:absolute;
+      width:1px;
+      height:1px;
+      opacity:0;
       pointer-events:none;
-      z-index:998;
+      left:-9999px;
+      top:-9999px;
       background:#050208;
       object-fit:cover;
-    }
-
-    #glowCanvas{
-      position:relative;
-      z-index:999;
     }
 
     /* WebKit native video fullscreen controls its own presentation surface. */
@@ -579,15 +571,12 @@
         glowMirrorStream = glowCanvas.captureStream(30);
         glowMirrorVideo.srcObject = glowMirrorStream;
         glowMirrorVideo.muted = true;
-        glowMirrorVideo.defaultMuted = true;
         glowMirrorVideo.autoplay = true;
         glowMirrorVideo.playsInline = true;
-        glowMirrorVideo.setAttribute("playsinline","");
-        glowMirrorVideo.setAttribute("webkit-playsinline","");
-        glowMirrorVideo.controls = false;
 
-        // Start decoding immediately. Do not await: on iOS we want the media
-        // pipeline alive as early as possible without consuming later gestures.
+        // Start playback immediately where policy permits. Because the video is
+        // muted and created from the live canvas, this should not interfere with
+        // the show's actual audio element.
         const p = glowMirrorVideo.play();
         if(p && typeof p.catch === "function"){
           p.catch(err => console.warn("Mirror video play deferred:", err));
@@ -601,26 +590,6 @@
       }
     }
 
-    function primeGlowMirrorFrame(){
-      // Native WebKit fullscreen can transition faster than a canvas MediaStream
-      // produces its first composited video frame. A synchronous poster snapshot
-      // guarantees that fullscreen never opens onto an unpainted/white surface.
-      try{
-        if(glowCanvas.width > 0 && glowCanvas.height > 0){
-          glowMirrorVideo.poster = glowCanvas.toDataURL("image/jpeg", .92);
-        }
-      }catch(_err){
-        // Canvas is same-origin generated graphics, but poster priming is optional.
-      }
-
-      try{
-        const p = glowMirrorVideo.play();
-        if(p && typeof p.catch === "function"){
-          p.catch(()=>{});
-        }
-      }catch(_err){}
-    }
-
 async function requestGlowFullscreen(){
       document.documentElement.style.backgroundColor = "#050208";
       document.body.style.backgroundColor = "#050208";
@@ -632,7 +601,6 @@ async function requestGlowFullscreen(){
       // and clock-synchronized rather than pre-rendered.
       try{
         ensureGlowVideoMirror();
-        primeGlowMirrorFrame();
 
         if(typeof glowMirrorVideo.webkitEnterFullscreen === "function"){
           // webkitEnterFullscreen must be called directly from a user gesture.
@@ -798,7 +766,6 @@ async function requestGlowFullscreen(){
     function drawCanvasCountdown(w, h){
       if(!glowCanvasCountdownText) return;
 
-      const value = glowCanvasCountdownText;
       const minDim = Math.min(w,h);
       const size = Math.max(76, Math.min(minDim*.28, 190));
 
@@ -807,13 +774,10 @@ async function requestGlowFullscreen(){
       glowCtx.textAlign = "center";
       glowCtx.textBaseline = "middle";
       glowCtx.font = `700 ${size}px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif`;
-
-      // A soft dark halo keeps the number legible without introducing linework.
       glowCtx.shadowColor = "rgba(0,0,0,.72)";
       glowCtx.shadowBlur = Math.max(18, size*.18);
       glowCtx.fillStyle = "rgba(255,255,255,.96)";
-      glowCtx.fillText(value, w/2, h/2);
-
+      glowCtx.fillText(glowCanvasCountdownText, w/2, h/2);
       glowCtx.restore();
     }
 
@@ -861,27 +825,9 @@ async function requestGlowFullscreen(){
           glowCtx.fillStyle=g;
           glowCtx.fillRect(x-r,y-r,r*2,r*2);
         }
-        // Native video fullscreen only sees the canvas stream, not DOM overlays,
-        // so paint the countdown directly into the canvas during preshow.
+        // Paint countdown into the same canvas that the fullscreen video mirrors.
+        // No changes to the mirror/video/fullscreen architecture itself.
         drawCanvasCountdown(w,h);
-
-        // Keep the mirror video actively compositing in preshow. Refresh its
-        // poster about once per second as an iOS-native-fullscreen safety frame.
-        if(glowMirrorVideo && glowMirrorReady){
-          try{
-            if(glowMirrorVideo.paused){
-              const p=glowMirrorVideo.play();
-              if(p && typeof p.catch==="function") p.catch(()=>{});
-            }
-            const sec=Math.floor(clock);
-            if(primeGlowMirrorFrame._lastSec !== sec){
-              primeGlowMirrorFrame._lastSec=sec;
-              try{
-                glowMirrorVideo.poster=glowCanvas.toDataURL("image/jpeg", .84);
-              }catch(_err){}
-            }
-          }catch(_err){}
-        }
 
         glowFrame=requestAnimationFrame(drawGlow);
         return;
@@ -1060,19 +1006,13 @@ async function requestGlowFullscreen(){
     function activateGlow(){
       if(glowActive) return;
       glowActive=true;
+      ensureGlowVideoMirror();
       resizeGlow();
       glowScreen.classList.add('active');
       glowScreen.setAttribute('aria-hidden','false');
       const alreadyFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
       fullscreenButton.classList.toggle('hidden', alreadyFullscreen);
-
-      // Paint one real preshow frame first, then attach the video capture on the
-      // next animation turn so captureStream never begins from an empty canvas.
-      glowFrame=requestAnimationFrame((ts)=>{
-        drawGlow(ts);
-        ensureGlowVideoMirror();
-        primeGlowMirrorFrame();
-      });
+      glowFrame=requestAnimationFrame(drawGlow);
     }
 
     function deactivateGlow(){
@@ -1363,7 +1303,6 @@ async function requestGlowFullscreen(){
     function setCountdown(msg){
       countdownEl.textContent = msg;
       const numeric = Number(msg);
-
       if(msg === ""){
         glowCanvasCountdownText = "";
         glowCountdownEl.textContent = "";
@@ -1371,7 +1310,6 @@ async function requestGlowFullscreen(){
         glowCountdownEl.style.opacity = "1";
         return;
       }
-
       const displayValue = String(Math.max(0, Math.ceil(numeric || 0)));
       glowCanvasCountdownText = displayValue;
       glowCountdownEl.textContent = displayValue;
