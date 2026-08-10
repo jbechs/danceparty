@@ -344,39 +344,6 @@
       display: block;
     }
 
-
-    #dimScreenButton{
-      position: fixed !important;
-      left: max(14px, env(safe-area-inset-left, 0px)) !important;
-      bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 10px)) !important;
-      z-index: 5000 !important;
-      min-width: 124px;
-      min-height: 48px;
-      padding: 12px 18px !important;
-      border-radius: 999px !important;
-      border: 1px solid rgba(255,255,255,.28) !important;
-      background: rgba(5,2,8,.78) !important;
-      color: rgba(255,255,255,.96) !important;
-      font-size: 16px !important;
-      font-weight: 600 !important;
-      line-height: 1 !important;
-      letter-spacing: .01em;
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      box-shadow: 0 4px 18px rgba(0,0,0,.28);
-      opacity: .88;
-      touch-action: manipulation;
-    }
-
-    #dimScreenButton:active{
-      transform: scale(.97);
-      opacity: 1;
-    }
-
-    #dimScreenButton.hidden{
-      display:none !important;
-    }
-
 </style>
 </head>
 
@@ -387,7 +354,6 @@
     <div id="glowVignette"></div>
     <div id="glowCountdown" aria-live="polite"></div>
     <button id="fullscreenButton" type="button">Full Screen</button>
-      <button type="button" id="dimScreenButton" aria-label="Dim screen">Dim Screen</button>
     <button id="glowResume" class="hidden" type="button">Tap to resume sound</button>
   </div>
 
@@ -395,6 +361,7 @@
     <div class="header">
       <h1>dance party now</h1>
       <div class="subtitle">crank all devices &amp; turn off lights</div>
+      <div class="subtitle">dark mode advised</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -457,7 +424,6 @@
     const glowCanvas = document.getElementById("glowCanvas");
     const glowCtx = glowCanvas.getContext("2d", { alpha:false });
     const fullscreenButton = document.getElementById("fullscreenButton");
-    const dimScreenButton = document.getElementById("dimScreenButton");
     const glowResume = document.getElementById("glowResume");
     let glowActive = false;
     let glowPerformanceStarted = false;
@@ -946,59 +912,6 @@
       glowTapTimes=glowTapTimes.filter(t=>now-t<3000);
       glowTapTimes.push(now);
       if(glowTapTimes.length>=5){ glowTapTimes=[]; deactivateGlow(); }
-    });
-
-
-    function applyDimScreenMode(){
-      const dark = "#050208";
-
-      // Force every surface we control to the same near-black.
-      document.documentElement.style.background = dark;
-      document.documentElement.style.backgroundColor = dark;
-      document.documentElement.style.colorScheme = "dark";
-      document.body.style.background = dark;
-      document.body.style.backgroundColor = dark;
-      document.body.style.colorScheme = "dark";
-
-      if(glowScreen){
-        glowScreen.style.background = dark;
-        glowScreen.style.backgroundColor = dark;
-      }
-      if(glowCanvas){
-        glowCanvas.style.background = dark;
-        glowCanvas.style.backgroundColor = dark;
-      }
-
-      // Update theme-color dynamically; some mobile browsers repaint their bars
-      // after this changes, others ignore it. Harmless where unsupported.
-      let themeMeta = document.querySelector('meta[name="theme-color"]');
-      if(!themeMeta){
-        themeMeta = document.createElement("meta");
-        themeMeta.setAttribute("name","theme-color");
-        document.head.appendChild(themeMeta);
-      }
-      themeMeta.setAttribute("content", dark);
-
-      let schemeMeta = document.querySelector('meta[name="color-scheme"]');
-      if(!schemeMeta){
-        schemeMeta = document.createElement("meta");
-        schemeMeta.setAttribute("name","color-scheme");
-        document.head.appendChild(schemeMeta);
-      }
-      schemeMeta.setAttribute("content","dark");
-
-      // Force native controls to re-resolve against dark color-scheme.
-      document.querySelectorAll("input, button, select, textarea").forEach(el=>{
-        el.style.colorScheme = "dark";
-      });
-
-      document.documentElement.classList.add("dim-screen-active");
-      dimScreenButton.classList.add("hidden");
-    }
-
-    dimScreenButton.addEventListener("click", (ev)=>{
-      ev.preventDefault();
-      applyDimScreenMode();
     });
 
     fullscreenButton.addEventListener('click', async (ev)=>{
