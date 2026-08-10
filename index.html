@@ -372,6 +372,13 @@
       display:none !important;
     }
 
+
+    /* Countdown is baked into the canvas/video during the visual preshow.
+       Hide the old DOM copy there so only one number is visible. */
+    #glowScreen.active #glowCountdown{
+      display:none !important;
+    }
+
 </style>
 </head>
 
@@ -763,21 +770,21 @@ async function requestGlowFullscreen(){
     }
 
 
-    function drawCanvasCountdown(w, h){
+    function drawCountdownIntoGlowCanvas(w,h){
       if(!glowCanvasCountdownText) return;
 
-      const minDim = Math.min(w,h);
-      const size = Math.max(76, Math.min(minDim*.28, 190));
+      const minDim=Math.min(w,h);
+      const size=Math.max(72,Math.min(180,minDim*.27));
 
       glowCtx.save();
-      glowCtx.globalCompositeOperation = "source-over";
-      glowCtx.textAlign = "center";
-      glowCtx.textBaseline = "middle";
-      glowCtx.font = `700 ${size}px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif`;
-      glowCtx.shadowColor = "rgba(0,0,0,.72)";
-      glowCtx.shadowBlur = Math.max(18, size*.18);
-      glowCtx.fillStyle = "rgba(255,255,255,.96)";
-      glowCtx.fillText(glowCanvasCountdownText, w/2, h/2);
+      glowCtx.globalCompositeOperation="source-over";
+      glowCtx.textAlign="center";
+      glowCtx.textBaseline="middle";
+      glowCtx.font=`700 ${size}px -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif`;
+      glowCtx.shadowColor="rgba(0,0,0,.78)";
+      glowCtx.shadowBlur=Math.max(20,size*.18);
+      glowCtx.fillStyle="rgba(255,255,255,.96)";
+      glowCtx.fillText(glowCanvasCountdownText,w/2,h/2);
       glowCtx.restore();
     }
 
@@ -825,10 +832,7 @@ async function requestGlowFullscreen(){
           glowCtx.fillStyle=g;
           glowCtx.fillRect(x-r,y-r,r*2,r*2);
         }
-        // Paint countdown into the same canvas that the fullscreen video mirrors.
-        // No changes to the mirror/video/fullscreen architecture itself.
-        drawCanvasCountdown(w,h);
-
+        drawCountdownIntoGlowCanvas(w,h);
         glowFrame=requestAnimationFrame(drawGlow);
         return;
       }
