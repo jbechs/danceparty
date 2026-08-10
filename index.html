@@ -1,12 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta name="theme-color" content="#050208">
+
+  <!-- Keep browser UI dark in both device light and dark appearance modes. -->
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#050208">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#050208">
   <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="application-name" content="Dance Party Now">
+  <meta name="apple-mobile-web-app-title" content="Dance Party Now">
+  <link rel="manifest" href="dance-party-now.webmanifest">
+
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="color-scheme" content="dark" />
-  <meta name="theme-color" content="#120b18" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>dance party now</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -179,7 +187,7 @@
       opacity:0;
       visibility:hidden;
       transition:opacity 700ms ease;
-      touch-action:manipulation;
+      touch-action:pan-y pinch-zoom;
       user-select:none;
       -webkit-user-select:none;
     }
@@ -280,7 +288,8 @@
       min-height: 100%;
       background: #050208 !important;
       color-scheme: dark;
-      overscroll-behavior: none;
+      overscroll-behavior-x: none;
+      overscroll-behavior-y: auto;
     }
 
     html {
@@ -291,7 +300,8 @@
     body {
       min-height: 100vh;
       min-height: 100dvh;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
       background-color: #050208 !important;
     }
 
@@ -324,6 +334,26 @@
       background: #050208 !important;
     }
 
+
+    html, body, :root {
+      background-color: #050208 !important;
+    }
+    body {
+      min-height: 100svh;
+      min-height: 100dvh;
+    }
+    #glowScreen {
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+      box-sizing: border-box;
+    }
+
 </style>
 </head>
 
@@ -340,7 +370,7 @@
   <main class="container">
     <div class="header">
       <h1>dance party now</h1>
-      <div class="subtitle">crank all devices & turn off lights</div>
+      <div class="subtitle">crank all devices &amp; turn off lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -501,62 +531,76 @@
     }
 
     async function requestGlowFullscreen(){
-      let entered = false;
-
-      // Paint all potentially exposed browser/document areas dark before requesting
-      // fullscreen, so unsupported/mobile browsers do not reveal a bright page edge.
+      // Fullscreen must be requested directly from the user's tap. Do not make an
+      // awaited "options" attempt and then retry: transient user activation may be
+      // gone by the time a second request runs.
       document.documentElement.style.backgroundColor = "#050208";
       document.body.style.backgroundColor = "#050208";
       glowScreen.style.backgroundColor = "#050208";
 
-      try{
-        // Fullscreen the visual surface itself rather than the entire document.
-        // On browsers that support the modern API, ask to hide navigation UI.
-        const el = glowScreen;
-        if(typeof el.requestFullscreen === "function"){
-          try{
-            await el.requestFullscreen({ navigationUI: "hide" });
-          }catch(_optsErr){
-            const result = el.requestFullscreen();
-            if(result && typeof result.then === "function") await result;
-          }
-          entered = true;
-        }else{
-          const webkitRequest =
-            el.webkitRequestFullscreen ||
-            el.webkitRequestFullScreen;
-          if(typeof webkitRequest === "function"){
-            const result = webkitRequest.call(el);
-            if(result && typeof result.then === "function") await result;
-            entered = true;
-          }else if(typeof document.documentElement.webkitRequestFullscreen === "function"){
-            const result = document.documentElement.webkitRequestFullscreen();
-            if(result && typeof result.then === "function") await result;
-            entered = true;
-          }
-        }
-      }catch(_err){
-        // iPhone Safari may refuse arbitrary-element fullscreen. Keep the visual
-        // pinned edge-to-edge and dark; playback must never depend on fullscreen.
+      const el = glowScreen;
+      let request = null;
+
+      if(typeof el.requestFullscreen === "function"){
+        request = () => el.requestFullscreen();
+      }else if(typeof el.webkitRequestFullscreen === "function"){
+        request = () => el.webkitRequestFullscreen();
+      }else if(typeof el.webkitRequestFullScreen === "function"){
+        request = () => el.webkitRequestFullScreen();
       }
 
-      // Best available immersive viewport even when true fullscreen is unavailable.
-      glowScreen.style.position = "fixed";
-      glowScreen.style.inset = "0";
-      glowScreen.style.width = "100vw";
-      glowScreen.style.height = "100dvh";
-      glowScreen.style.minHeight = "100vh";
+      if(!request){
+        // No arbitrary-element Fullscreen API on this browser. Keep the visual
+        // edge-to-edge, leave the fullscreen control visible, and do not pretend
+        // fullscreen succeeded.
+        glowScreen.style.position = "fixed";
+        glowScreen.style.inset = "0";
+        glowScreen.style.width = "100vw";
+        glowScreen.style.height = "100dvh";
+        glowScreen.style.minHeight = "100vh";
+        requestGlowWakeLock();
+        return false;
+      }
 
-      // On mobile browsers this encourages collapse of URL/tool bars after the tap.
       try{
-        window.scrollTo({ top: 1, left: 0, behavior: "instant" });
-      }catch(_err){
-        window.scrollTo(0, 1);
+        const result = request();
+        if(result && typeof result.then === "function") await result;
+      }catch(err){
+        console.warn("Fullscreen request failed:", err);
+        requestGlowWakeLock();
+        return false;
       }
 
       requestGlowWakeLock();
-      return entered;
+
+      // Some implementations update fullscreenElement on the next event turn.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      return !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement
+      );
     }
+
+    function syncFullscreenButton(){
+      const isFs = !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement
+      );
+      fullscreenButton.classList.toggle("hidden", isFs);
+
+      // Re-measure after entering/exiting fullscreen because mobile viewport
+      // dimensions can change significantly.
+      resizeGlow();
+    }
+
+    document.addEventListener("fullscreenchange", syncFullscreenButton);
+    document.addEventListener("webkitfullscreenchange", syncFullscreenButton);
+    document.addEventListener("fullscreenerror", ()=>{
+      fullscreenButton.classList.remove("hidden");
+    });
+    document.addEventListener("webkitfullscreenerror", ()=>{
+      fullscreenButton.classList.remove("hidden");
+    });
 
     function glowTrackTime(){
       // Canonical show time is the visual source of truth. This is what keeps
@@ -903,9 +947,15 @@
       if(glowTapTimes.length>=5){ glowTapTimes=[]; deactivateGlow(); }
     });
 
-    fullscreenButton.addEventListener('click', async ()=>{
-      await requestGlowFullscreen();
-      fullscreenButton.classList.add('hidden');
+    fullscreenButton.addEventListener('click', async (ev)=>{
+      // Keep this call as the first asynchronous operation initiated by the tap.
+      ev.preventDefault();
+      const entered = await requestGlowFullscreen();
+      if(entered){
+        fullscreenButton.classList.add('hidden');
+      }else{
+        fullscreenButton.classList.remove('hidden');
+      }
     });
 
     document.addEventListener('visibilitychange', ()=>{
@@ -922,6 +972,50 @@
         handleManualStart();
       }
     });
+
+    // Emergency recovery gesture: pull down from the very top edge to reload.
+    // Native pull-to-refresh remains enabled where possible, but true browser
+    // fullscreen can suppress it. This gives the audience the same recovery
+    // gesture even while the visual layer is active/fullscreen.
+    let glowPullStartY = null;
+    let glowPullStartX = null;
+    let glowPullArmed = false;
+
+    glowScreen.addEventListener("touchstart", (ev)=>{
+      if(!glowActive || !ev.touches || ev.touches.length !== 1) return;
+      const touch = ev.touches[0];
+      glowPullStartY = touch.clientY;
+      glowPullStartX = touch.clientX;
+      glowPullArmed = glowPullStartY <= 72;
+    }, { passive:true });
+
+    glowScreen.addEventListener("touchmove", (ev)=>{
+      if(!glowPullArmed || !ev.touches || ev.touches.length !== 1) return;
+      const touch = ev.touches[0];
+      const dy = touch.clientY - glowPullStartY;
+      const dx = Math.abs(touch.clientX - glowPullStartX);
+
+      // Require an unmistakable downward pull from the top edge. This threshold
+      // is intentionally generous so ordinary dancing/handling does not reload.
+      if(dy >= 140 && dx <= 90){
+        glowPullArmed = false;
+        document.documentElement.style.backgroundColor = "#050208";
+        document.body.style.backgroundColor = "#050208";
+        window.location.reload();
+      }
+    }, { passive:true });
+
+    glowScreen.addEventListener("touchend", ()=>{
+      glowPullArmed = false;
+      glowPullStartY = null;
+      glowPullStartX = null;
+    }, { passive:true });
+
+    glowScreen.addEventListener("touchcancel", ()=>{
+      glowPullArmed = false;
+      glowPullStartY = null;
+      glowPullStartX = null;
+    }, { passive:true });
     // ---------------------------------------------------------------------
 
     let countdownFrame = null;
