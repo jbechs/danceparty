@@ -208,15 +208,27 @@
       top:50%;
       transform:translate(-50%,-50%);
       z-index:3;
+      margin:0;
+      padding:0;
+      border:0;
+      background:none;
+      box-shadow:none;
       text-align:center;
+      font-family:Arial, Helvetica, sans-serif;
       font-size:clamp(4rem,18vw,8rem);
-      font-weight:500;
+      font-weight:400;
       line-height:1;
       letter-spacing:0;
       color:#fff;
       font-variant-numeric:tabular-nums;
       text-shadow:none;
       pointer-events:none;
+      opacity:1;
+      transition:opacity 5s linear;
+    }
+
+    #glowCountdown.fadeZero{
+      opacity:0;
     }
 
     #fullscreenButton{
@@ -274,7 +286,7 @@
   <main class="container">
     <div class="header">
       <h1>dance party now</h1>
-      <div class="subtitle">crank all devices & turn off lights</div>
+      <div class="subtitle">crank all devices &amp; turn off lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -333,18 +345,52 @@
     // A tiny per-device phase difference keeps a crowd visually alive while
     // cue changes remain synchronized. Session-scoped; no storage or identity.
     const glowVariant = Math.random();
+    // Each participant enters through one of three equally likely color families.
+    // The show cues remain synchronized; only the palette family differs.
+    const glowPaletteIndex = Math.floor(Math.random() * 3);
+    const GLOW_PALETTE_OFFSETS = [0, 118, 236];
+    const glowPaletteOffset = GLOW_PALETTE_OFFSETS[glowPaletteIndex];
 
+    // The visual score is locked to the same canonical show clock as playback.
+    // Beat grid measured from Life.mp3 (123.046875 BPM; first beat transient ~0.04644s).
+    const GLOW_BPM = 123.046875;
+    const GLOW_BEAT0 = 0.04644;
+    const GLOW_SEC_PER_BEAT = 60 / GLOW_BPM;
+
+    // Structural cue points measured from the supplied Life.mp3. These are not
+    // live audio detections: every handset evaluates the same score from track time.
     const GLOW_CUES = [
-      // time, hue A, hue B, energy, pulse, label
-      { t:0,   a:195, b:315, e:.72, p:.70 }, // cyan / magenta invitation
-      { t:24,  a:325, b:24,  e:.88, p:1.00 }, // hot pink / orange
-      { t:52,  a:92,  b:205, e:.78, p:1.25 }, // acid green / electric blue
-      { t:82,  a:272, b:332, e:.66, p:.82 }, // violet suspension
-      { t:112, a:18,  b:350, e:.92, p:1.35 }, // amber / red drive
-      { t:145, a:184, b:226, e:.73, p:.95 }, // cool cyan opening
-      { t:174, a:300, b:70,  e:1.00,p:1.65 }, // peak: prismatic
-      { t:196, a:205, b:330, e:.58, p:.55 }, // final bloom / release
-      { t:202, a:250, b:300, e:.25, p:.30 }
+      // time, hue A, hue B, base energy, motion multiplier
+      { t:0.000,   a:195, b:315, e:.58, m:.62 }, // opening: previous morphing look
+      { t:23.522,  a:214, b:326, e:.64, m:.72 },
+      { t:36.827,  a:325, b:24,  e:.74, m:.88 }, // first clear lift
+      { t:48.437,  a:92,  b:205, e:.82, m:1.00 },
+      { t:56.000,  a:272, b:332, e:.50, m:.62 }, // withdrawal
+      { t:69.730,  a:328, b:28,  e:.86, m:1.10 }, // first release
+      { t:81.583,  a:272, b:332, e:.66, m:.82 }, // interruption / suspension
+      { t:98.754,  a:18,  b:350, e:.96, m:1.22 }, // second hit
+      { t:113.650, a:258, b:318, e:.52, m:.66 }, // long suspension
+      { t:151.986, a:184, b:226, e:.78, m:1.02 }, // ascent begins
+      { t:163.596, a:292, b:42,  e:.94, m:1.28 }, // pressure before major drop
+      { t:169.900, a:300, b:70,  e:1.28,m:1.72 }, // BIG DROP
+      { t:180.291, a:34,  b:196, e:1.34,m:1.88 }, // full power
+      { t:193.840, a:316, b:86,  e:1.42,m:2.00 }, // final drive
+      { t:200.980, a:205, b:330, e:1.05,m:1.25 }, // final bloom
+      { t:202.600, a:250, b:300, e:.24, m:.32 }
+    ];
+
+    const GLOW_DROP_EVENTS = [
+      { t:36.827,  s:.34 },
+      { t:48.437,  s:.28 },
+      { t:69.730,  s:.50 },
+      { t:81.583,  s:.30 },
+      { t:98.754,  s:.56 },
+      { t:151.986, s:.30 },
+      { t:163.596, s:.42 },
+      { t:169.900, s:1.00 },
+      { t:180.291, s:.58 },
+      { t:193.840, s:.62 },
+      { t:200.980, s:.70 }
     ];
 
     function resizeGlow(){
@@ -397,13 +443,17 @@
     }
 
     function glowTrackTime(){
-      // During performance the media playhead is the visual clock. Before an
-      // on-time scheduled curtain, show a slow ambient field instead.
-      if(!audio.paused && isFinite(audio.currentTime)) return audio.currentTime;
-      if(scheduledAnchorMs != null && performanceClockFrozen){
+      // Canonical show time is the visual source of truth. This is what keeps
+      // beat drops aligned to the shared UTC performance clock on every device.
+      // audio.currentTime is only a fallback when the shared clock is unavailable.
+      if(glowPerformanceStarted && scheduledAnchorMs != null && performanceClockFrozen){
         const expected = getExpectedTrackTimeSec();
-        if(expected != null && expected >= 0) return expected;
+        if(expected != null && expected >= 0){
+          const maxT = (isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 202.65;
+          return Math.min(expected, maxT);
+        }
       }
+      if(!audio.paused && isFinite(audio.currentTime)) return audio.currentTime;
       return 0;
     }
 
@@ -416,6 +466,47 @@
       return c;
     }
 
+    function cueBlendAt(t){
+      let i=0;
+      while(i < GLOW_CUES.length-1 && t >= GLOW_CUES[i+1].t) i++;
+      const a=GLOW_CUES[i];
+      const b=GLOW_CUES[Math.min(i+1,GLOW_CUES.length-1)];
+      if(a===b) return {...a};
+      const span=Math.max(.001,b.t-a.t);
+      let x=Math.max(0,Math.min(1,(t-a.t)/span));
+      // Keep drops crisp while allowing the organism to evolve between them.
+      x=x*x*(3-2*x);
+      return {
+        t,
+        a:a.a+(b.a-a.a)*x,
+        b:a.b+(b.b-a.b)*x,
+        e:a.e+(b.e-a.e)*x,
+        m:a.m+(b.m-a.m)*x
+      };
+    }
+
+    function beatEnvelope(t){
+      if(t < GLOW_BEAT0) return 0;
+      const beatPos=(t-GLOW_BEAT0)/GLOW_SEC_PER_BEAT;
+      const frac=beatPos-Math.floor(beatPos);
+      return Math.exp(-frac*7.2);
+    }
+
+    function barEnvelope(t){
+      if(t < GLOW_BEAT0) return 0;
+      const beatIndex=Math.floor((t-GLOW_BEAT0)/GLOW_SEC_PER_BEAT);
+      return (beatIndex % 4 === 0) ? beatEnvelope(t) : 0;
+    }
+
+    function dropEnvelope(t){
+      let sum=0;
+      for(const ev of GLOW_DROP_EVENTS){
+        const dt=t-ev.t;
+        if(dt>=0 && dt<1.45) sum += ev.s*Math.exp(-dt*3.8);
+      }
+      return Math.min(1.45,sum);
+    }
+
     function hsl(h,s,l,a=1){
       return `hsla(${((h%360)+360)%360} ${s}% ${l}% / ${a})`;
     }
@@ -425,14 +516,17 @@
       const w = window.innerWidth;
       const h = window.innerHeight;
       const trackT = glowTrackTime();
-      const cue = cueAt(trackT);
-      const clock = nowMs / 1000;
+      const cue = cueBlendAt(trackT);
+      // Once the performance begins, animation time itself comes from trackT.
+      // requestAnimationFrame only redraws; it no longer defines musical phase.
+      const clock = glowPerformanceStarted ? trackT : nowMs / 1000;
       const phase = glowVariant * Math.PI * 2;
-      const beat = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p + phase * .10);
-      const beat2 = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p * 2 + phase * .22);
-      const breath = .5 + .5 * Math.sin(clock * .58 + phase);
-      const pulse = Math.pow(beat, 1.7);
-      const energy = cue.e * (.58 + pulse * .72 + beat2 * .10);
+      const beatKick = beatEnvelope(trackT);
+      const barKick = barEnvelope(trackT);
+      const dropKick = dropEnvelope(trackT);
+      const breath = .5 + .5 * Math.sin(clock * .52 + phase);
+      const pulse = Math.min(1.6, .18 + .68*beatKick + .28*barKick + .62*dropKick);
+      const energy = cue.e * (.72 + .15*breath + .26*beatKick + .20*barKick + .58*dropKick);
 
       glowCtx.globalCompositeOperation = 'source-over';
       // Deep-purple luminous field beneath every state.
@@ -444,8 +538,8 @@
       if(!glowPerformanceStarted){
         const preshowBreath = .5 + .5 * Math.sin(clock * .34 + phase);
         const preshowBodies = [
-          { hue:285, x:.46 + .07*Math.sin(clock*.12 + phase),     y:.46 + .06*Math.cos(clock*.10 + phase*.7), r:.62, a:.16 },
-          { hue:330, x:.60 + .06*Math.cos(clock*.09 + phase*1.3), y:.57 + .05*Math.sin(clock*.11 + phase*.5), r:.48, a:.10 }
+          { hue:285, x:.46 + .07*Math.sin(clock*(.12*cue.m) + phase),     y:.46 + .06*Math.cos(clock*.10 + phase*.7), r:.62, a:.16 },
+          { hue:330, x:.60 + .06*Math.cos(clock*(.09*cue.m) + phase*1.3), y:.57 + .05*Math.sin(clock*(.27*cue.m) + phase*.5), r:.48, a:.10 }
         ];
         glowCtx.globalCompositeOperation='screen';
         for(const b of preshowBodies){
@@ -461,63 +555,148 @@
         return;
       }
 
-      // SHOW: the full colorful object arrives at curtain-up. All devices share
-      // cue colors/timing, while phase and geometry differ subtly across the crowd.
-      const blobs = [
-        { hue:cue.a,      x:.50 + .15*Math.sin(clock*.31 + phase),     y:.43 + .12*Math.cos(clock*.27 + phase*.7),  r:.54 },
-        { hue:cue.b,      x:.36 + .20*Math.cos(clock*.23 + phase*1.4), y:.58 + .14*Math.sin(clock*.33 + phase*.4),  r:.47 },
-        { hue:cue.a+125,  x:.67 + .16*Math.sin(clock*.19 + phase*2.1), y:.61 + .17*Math.cos(clock*.21 + phase*1.2), r:.38 }
-      ];
+      // SHOW: fractal metamorphosis field.
+      // No strokes, filaments, outlines, or line graphics. Every visible form is temporary:
+      // it folds, buds, splits, erodes, and becomes another form.
+      const baseHueA = cue.a + glowPaletteOffset;
+      const baseHueB = cue.b + glowPaletteOffset;
+      const minDim = Math.min(w,h);
 
-      glowCtx.globalCompositeOperation = 'screen';
-      for(const b of blobs){
-        const x=b.x*w, y=b.y*h, r=b.r*Math.max(w,h)*( .72 + .24*pulse + .07*breath );
-        const g=glowCtx.createRadialGradient(x,y,0,x,y,r);
-        g.addColorStop(0, hsl(b.hue + 22*beat, 100, 68, Math.min(1,.98*energy)));
-        g.addColorStop(.20, hsl(b.hue, 100, 58, Math.min(1,.78*energy)));
-        g.addColorStop(.58, hsl(b.hue-18, 98, 44, .30*energy));
-        g.addColorStop(1, hsl(b.hue, 90, 24, 0));
-        glowCtx.fillStyle=g;
-        glowCtx.fillRect(x-r,y-r,r*2,r*2);
-      }
-
-      // Broad synchronized luminosity pulse: the handset itself should visibly "breathe".
-      glowCtx.globalCompositeOperation = 'screen';
-      glowCtx.fillStyle = hsl(cue.a + 40*beat, 96, 56, .035 + .12*pulse);
+      glowCtx.globalCompositeOperation='source-over';
+      glowCtx.fillStyle='#000';
       glowCtx.fillRect(0,0,w,h);
 
-      // Central 'living object': a soft orb with a heartbeat-like expansion.
-      const cx=w*(.50 + .025*Math.sin(clock*.41+phase));
-      const cy=h*(.50 + .020*Math.cos(clock*.37+phase));
-      const rr=Math.min(w,h)*(.18 + .035*beat + .018*breath);
-      const core=glowCtx.createRadialGradient(cx,cy,0,cx,cy,rr*2.5);
-      core.addColorStop(0, `rgba(255,255,255,${.72 + .18*beat})`);
-      core.addColorStop(.12, hsl(cue.a + 45, 90, 80, .62));
-      core.addColorStop(.42, hsl(cue.b, 100, 58, .32));
-      core.addColorStop(1, hsl(cue.b, 100, 45, 0));
-      glowCtx.fillStyle=core;
-      glowCtx.beginPath();
-      glowCtx.arc(cx,cy,rr*2.5,0,Math.PI*2);
-      glowCtx.fill();
+      const pulseA=Math.min(1.7,.18 + .72*beatKick + .32*barKick + .62*dropKick);
+      const pulseB=.5+.5*Math.sin(clock*(.68*cue.m)+phase*.47);
+      const pressure=.90 + .075*pulseB + .11*pulseA + .11*dropKick;
 
-      // A few orbiting sparks read especially well when phones are raised.
-      for(let i=0;i<5;i++){
-        const a=clock*(.35+.055*i)+phase+i*1.256;
-        const rad=Math.min(w,h)*(.24+.035*i);
-        const sx=cx+Math.cos(a)*rad;
-        const sy=cy+Math.sin(a*1.07)*rad*.72;
-        const sr=2.5 + 3.5*energy + 2*beat;
-        glowCtx.fillStyle=hsl(cue.a + i*48, 100, 82, .45+.35*energy);
-        glowCtx.beginPath();
-        glowCtx.arc(sx,sy,sr,0,Math.PI*2);
-        glowCtx.fill();
+      // Recursive morph fields: broad soft masks that continually change topology.
+      // Each field is built from layered deformed lobes, not fixed primitives.
+      glowCtx.globalCompositeOperation='screen';
+
+      const morphs = [
+        {h:baseHueA,     x:.30,y:.38,s:.66,o:.3},
+        {h:baseHueB+80,  x:.68,y:.58,s:.72,o:1.9},
+        {h:baseHueA+165, x:.50,y:.50,s:.82,o:3.6}
+      ];
+
+      for(let mi=0;mi<morphs.length;mi++){
+        const m=morphs[mi];
+
+        const cx=w*(m.x
+          + .18*Math.sin(clock*((.21+.025*mi)*cue.m)+m.o+phase)
+          + .07*Math.sin(clock*((.53+.017*mi)*cue.m)+m.o*.7));
+        const cy=h*(m.y
+          + .16*Math.cos(clock*((.19+.021*mi)*cue.m)+m.o*.8+phase*.6)
+          + .065*Math.sin(clock*((.47+.014*mi)*cue.m)+m.o*.5));
+
+        const baseR=minDim*m.s*pressure*
+          (1+.14*Math.sin(clock*((.69+.03*mi)*cue.m)+m.o)+.06*Math.sin(clock*((1.31+.02*mi)*cue.m)+phase));
+
+        // Build several translucent child forms whose frequencies drift over time.
+        // As frequencies cross, one blob appears to become another.
+        const layerCount = cue.e > 1.15 ? 9 : (cue.e > .90 ? 8 : 6);
+        for(let layer=0;layer<layerCount;layer++){
+          const t=layer/Math.max(1,layerCount-1);
+          const f2=1.3 + .7*(.5+.5*Math.sin(clock*(.17*cue.m)+mi+layer*.6));
+          const f3=2.2 + .9*(.5+.5*Math.sin(clock*(.13*cue.m)+phase+layer*.8));
+          const f5=3.8 + 1.1*(.5+.5*Math.sin(clock*(.09*cue.m)+mi*.7+layer));
+          const localR=baseR*(.34+t*.16);
+
+          glowCtx.save();
+          glowCtx.translate(cx,cy);
+          glowCtx.rotate(.22*Math.sin(clock*((.23+.013*layer)*cue.m)+m.o+layer));
+
+          glowCtx.beginPath();
+          const steps=128;
+          for(let j=0;j<=steps;j++){
+            const a=j/steps*Math.PI*2;
+
+            // Drifting harmonics create recursive, always-changing organic topology.
+            const d=
+              1
+              + .24*Math.sin(f2*a + clock*((.59+.025*layer)*cue.m)+phase+mi)
+              + .15*Math.sin(f3*a - clock*((.43+.018*layer)*cue.m)+layer*.9)
+              + .09*Math.sin(f5*a + clock*((.31+.014*layer)*cue.m)+m.o)
+              + .045*Math.sin((f2+f3)*a - clock*(.22*cue.m) + layer);
+
+            const shear=.16*Math.sin(clock*(.27*cue.m)+layer+mi);
+            const px=Math.cos(a)*localR*d + Math.sin(a)*localR*shear;
+            const py=Math.sin(a)*localR*d*(.70+.18*Math.sin(clock*(.16*cue.m)+layer))
+              + Math.cos(a*2+clock*(.24*cue.m))*localR*.07;
+
+            if(j===0) glowCtx.moveTo(px,py); else glowCtx.lineTo(px,py);
+          }
+          glowCtx.closePath();
+
+          const hue=m.h + 110*t + 42*Math.sin(clock*.15+layer+mi);
+          glowCtx.fillStyle=hsl(hue,100,56+.08*100*pulseA,.035+.035*(1-t));
+          glowCtx.shadowBlur=minDim*(.07+.04*(1-t));
+          glowCtx.shadowColor=hsl(hue+30,100,62,.34);
+          glowCtx.fill();
+
+          glowCtx.restore();
+        }
       }
 
-      // White-out swell in the last six seconds of the 3:22 test track.
-      if(trackT >= 196 && trackT < 202){
-        const finale = Math.min(1, (trackT-196)/6);
+      // Recursive erosion: black soft forms continuously remove pieces from the color,
+      // forcing the visible topology to mutate rather than merely swell.
+      glowCtx.globalCompositeOperation='destination-out';
+      for(let i=0;i<5;i++){
+        const ex=w*(.5+.38*Math.sin(clock*((.20+.016*i)*cue.m)+phase+i*1.3));
+        const ey=h*(.5+.34*Math.cos(clock*((.18+.014*i)*cue.m)+phase*.7+i*.9));
+        const er=minDim*(.12+.10*(.5+.5*Math.sin(clock*((.41+.019*i)*cue.m)+i)));
+        const eg=glowCtx.createRadialGradient(ex,ey,0,ex,ey,er*2.9);
+        eg.addColorStop(0,'rgba(0,0,0,.82)');
+        eg.addColorStop(.38,'rgba(0,0,0,.56)');
+        eg.addColorStop(.74,'rgba(0,0,0,.16)');
+        eg.addColorStop(1,'rgba(0,0,0,0)');
+        glowCtx.fillStyle=eg;
+        glowCtx.fillRect(ex-er*3,ey-er*3,er*6,er*6);
+      }
+
+      // Soft luminous buds replace all filament/line vocabulary. Each bud is a
+      // blurred volumetric glow with no stroke, outline, arc, or connecting trace.
+      glowCtx.globalCompositeOperation='screen';
+      const budCount = cue.e > 1.15 ? 18 : (cue.e > .90 ? 13 : 9);
+      for(let bud=0;bud<budCount;bud++){
+        const u=(bud+.5)/budCount;
+        const a=bud*2.399963229728653 + phase*.35 + .42*Math.sin(clock*(.16*cue.m)+bud*.73);
+        const orbit=minDim*(.08 + u*.46)*(1+.10*Math.sin(clock*(.31*cue.m)+bud));
+        const bx=w/2 + Math.cos(a)*orbit + Math.sin(clock*(.22*cue.m)+bud)*minDim*.045;
+        const by=h/2 + Math.sin(a)*orbit*.74 + Math.cos(clock*(.19*cue.m)+bud*.6)*minDim*.040;
+        const br=minDim*(.030 + .040*(.5+.5*Math.sin(clock*(.39*cue.m)+bud*1.17)))
+          *(1+.34*pulseA+.28*dropKick);
+        const hue=baseHueA+bud*31+42*Math.sin(clock*(.11*cue.m)+bud);
+        const bg=glowCtx.createRadialGradient(bx,by,0,bx,by,br*3.2);
+        bg.addColorStop(0,hsl(hue+24,100,70,.10+.10*pulseA+.11*dropKick));
+        bg.addColorStop(.26,hsl(hue,100,58,.075+.055*pulseB));
+        bg.addColorStop(.62,hsl(hue+72,98,48,.028+.026*pulseA));
+        bg.addColorStop(1,hsl(hue,96,38,0));
+        glowCtx.fillStyle=bg;
+        glowCtx.fillRect(bx-br*3.2,by-br*3.2,br*6.4,br*6.4);
+      }
+
+      // Global metamorphic surge: whole field swells in chroma and scale pressure,
+      // but never flashes white or resolves into a fixed shape.
+      const surge=Math.pow(.5+.5*Math.sin(clock*(.81*cue.m)+phase*.23),2.0);
+      const sx=w*(.5+.20*Math.sin(clock*(.25*cue.m)+phase));
+      const sy=h*(.5+.18*Math.cos(clock*(.21*cue.m)+phase*.8));
+      const sr=minDim*(.46+.18*surge);
+      const sg=glowCtx.createRadialGradient(sx,sy,0,sx,sy,sr);
+      sg.addColorStop(0,hsl(baseHueA+35,100,70,.04+.08*surge));
+      sg.addColorStop(.38,hsl(baseHueB+75,100,56,.03+.06*surge));
+      sg.addColorStop(.72,hsl(baseHueA+150,100,46,.015+.03*surge));
+      sg.addColorStop(1,hsl(baseHueA,100,38,0));
+      glowCtx.fillStyle=sg;
+      glowCtx.fillRect(sx-sr,sy-sr,sr*2,sr*2);
+
+      // Synchronized impact wash. It blooms in color rather than white, so a
+      // crowd of phones visibly "hits" the same musical drop without strobing.
+      if(dropKick > .012 || barKick > .12){
+        const impactAlpha = Math.min(.30, .025*barKick + .22*dropKick);
         glowCtx.globalCompositeOperation='screen';
-        glowCtx.fillStyle=`rgba(255,255,255,${Math.sin(finale*Math.PI)*.28})`;
+        glowCtx.fillStyle=hsl(baseHueB + 55*dropKick,100,58,impactAlpha);
         glowCtx.fillRect(0,0,w,h);
       }
 
@@ -772,7 +951,16 @@
 
     function setCountdown(msg){
       countdownEl.textContent = msg;
-      glowCountdownEl.textContent = msg;
+      const numeric = Number(msg);
+      if(msg === ""){
+        glowCountdownEl.textContent = "";
+        glowCountdownEl.classList.remove("fadeZero");
+        glowCountdownEl.style.opacity = "1";
+        return;
+      }
+      glowCountdownEl.textContent = String(Math.max(0, Math.ceil(numeric || 0)));
+      glowCountdownEl.classList.remove("fadeZero");
+      glowCountdownEl.style.opacity = "1";
     }
 
     function setDebug(msg){
@@ -2267,7 +2455,21 @@
       startAttempted = true;
 
       hideStartNow();
-      setCountdown("");
+
+      // Curtain-up: hold a clean white 0, then let it disappear over 5 seconds.
+      setCountdown("0");
+      requestAnimationFrame(()=>{
+        requestAnimationFrame(()=>{
+          glowCountdownEl.style.opacity = "";
+          glowCountdownEl.classList.add("fadeZero");
+        });
+      });
+      setTimeout(()=>{
+        glowCountdownEl.textContent = "";
+        glowCountdownEl.classList.remove("fadeZero");
+        glowCountdownEl.style.opacity = "1";
+      }, 5000);
+
       setStatus("Playing");
       setDebug(`${lastClockSyncDebug || "Clock prepared"} · output latency ${outputLatencySupported ? Math.round(outputLatencySec * 1000) + " ms" : "unavailable"} · warm-transfer bias ${Math.round(startupCalibrationBiasSec * 1000)} ms · output latency diagnostic only · v4.98 observes settled startup drift at 1.0/1.5/2.0 s and corrects 100% of a stable plateau once; no platform sniffing; generic controller stands down during observation and post-seek settling · drift excludes output latency · ${getNetworkResilienceText()} · Network changes ignored during performance.`);
 
@@ -2324,12 +2526,12 @@
 
         if(remaining <= 0){
           clearTimers();
-          setCountdown("Starting now");
+          setCountdown("0");
           tryAutomaticStart();
           return;
         }
 
-        setCountdown(`Starting in ${formatCountdown(remaining)}`);
+        setCountdown(String(Math.max(0, Math.ceil(remaining / 1000))));
         setStatus(preshowPlaying ? "Pre-show playing…" : "Downloading…");
 
         countdownFrame = requestAnimationFrame(updateCountdown);
@@ -2339,7 +2541,7 @@
 
       countdownTimer = setTimeout(()=>{
         clearTimers();
-        setCountdown("Starting now");
+        setCountdown("0");
         tryAutomaticStart();
       }, Math.max(0, startTimeMs - syncedNowMs()));
     }
@@ -2672,4 +2874,3 @@
   </script>
 </body>
 </html>
-
