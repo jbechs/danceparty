@@ -354,6 +354,24 @@
       box-sizing: border-box;
     }
 
+
+    #glowMirrorVideo{
+      position:absolute;
+      width:1px;
+      height:1px;
+      opacity:0;
+      pointer-events:none;
+      left:-9999px;
+      top:-9999px;
+      background:#050208;
+      object-fit:cover;
+    }
+
+    /* WebKit native video fullscreen controls its own presentation surface. */
+    #glowMirrorVideo::-webkit-media-controls{
+      display:none !important;
+    }
+
 </style>
 </head>
 
@@ -361,9 +379,15 @@
 
   <div id="glowScreen" aria-hidden="true">
     <canvas id="glowCanvas"></canvas>
+      <video id="glowMirrorVideo"
+             muted
+             autoplay
+             playsinline
+             webkit-playsinline
+             aria-hidden="true"></video>
     <div id="glowVignette"></div>
     <div id="glowCountdown" aria-live="polite"></div>
-    <button id="fullscreenButton" type="button">go fullscreen</button>
+    <button id="fullscreenButton" type="button">Go Fullscreen</button>
     <button id="glowResume" class="hidden" type="button">Tap to resume sound</button>
   </div>
 
@@ -431,6 +455,7 @@
     // luminous object. It never drives audio or modifies the show clock.
     const glowScreen = document.getElementById("glowScreen");
     const glowCanvas = document.getElementById("glowCanvas");
+    const glowMirrorVideo = document.getElementById("glowMirrorVideo");
     const glowCtx = glowCanvas.getContext("2d", { alpha:false });
     const fullscreenButton = document.getElementById("fullscreenButton");
     const glowResume = document.getElementById("glowResume");
@@ -530,57 +555,90 @@
       }
     }
 
-    async function requestGlowFullscreen(){
-      // Fullscreen must be requested directly from the user's tap. Do not make an
-      // awaited "options" attempt and then retry: transient user activation may be
-      // gone by the time a second request runs.
-      document.documentElement.style.backgroundColor = "#050208";
-      document.body.style.backgroundColor = "#050208";
-      glowScreen.style.backgroundColor = "#050208";
+    
+    let glowMirrorStream = null;
+    let glowMirrorReady = false;
 
-      const el = glowScreen;
-      let request = null;
-
-      if(typeof el.requestFullscreen === "function"){
-        request = () => el.requestFullscreen();
-      }else if(typeof el.webkitRequestFullscreen === "function"){
-        request = () => el.webkitRequestFullscreen();
-      }else if(typeof el.webkitRequestFullScreen === "function"){
-        request = () => el.webkitRequestFullScreen();
-      }
-
-      if(!request){
-        // No arbitrary-element Fullscreen API on this browser. Keep the visual
-        // edge-to-edge, leave the fullscreen control visible, and do not pretend
-        // fullscreen succeeded.
-        glowScreen.style.position = "fixed";
-        glowScreen.style.inset = "0";
-        glowScreen.style.width = "100vw";
-        glowScreen.style.height = "100dvh";
-        glowScreen.style.minHeight = "100vh";
-        requestGlowWakeLock();
+    function ensureGlowVideoMirror(){
+      if(glowMirrorReady) return true;
+      if(!glowCanvas.captureStream){
+        console.warn("Canvas captureStream unavailable");
         return false;
       }
 
       try{
-        const result = request();
-        if(result && typeof result.then === "function") await result;
+        glowMirrorStream = glowCanvas.captureStream(30);
+        glowMirrorVideo.srcObject = glowMirrorStream;
+        glowMirrorVideo.muted = true;
+        glowMirrorVideo.autoplay = true;
+        glowMirrorVideo.playsInline = true;
+
+        // Start playback immediately where policy permits. Because the video is
+        // muted and created from the live canvas, this should not interfere with
+        // the show's actual audio element.
+        const p = glowMirrorVideo.play();
+        if(p && typeof p.catch === "function"){
+          p.catch(err => console.warn("Mirror video play deferred:", err));
+        }
+
+        glowMirrorReady = true;
+        return true;
       }catch(err){
-        console.warn("Fullscreen request failed:", err);
-        requestGlowWakeLock();
+        console.warn("Could not initialize canvas mirror video:", err);
         return false;
+      }
+    }
+
+async function requestGlowFullscreen(){
+      document.documentElement.style.backgroundColor = "#050208";
+      document.body.style.backgroundColor = "#050208";
+      glowScreen.style.backgroundColor = "#050208";
+
+      // First preference on iPhone/iOS: native VIDEO fullscreen. This is the same
+      // class of fullscreen presentation used by ordinary web video players.
+      // The video is fed live from our canvas, so the graphics remain generated
+      // and clock-synchronized rather than pre-rendered.
+      try{
+        ensureGlowVideoMirror();
+
+        if(typeof glowMirrorVideo.webkitEnterFullscreen === "function"){
+          // webkitEnterFullscreen must be called directly from a user gesture.
+          glowMirrorVideo.webkitEnterFullscreen();
+          requestGlowWakeLock();
+          return true;
+        }
+
+        if(typeof glowMirrorVideo.webkitEnterFullScreen === "function"){
+          glowMirrorVideo.webkitEnterFullScreen();
+          requestGlowWakeLock();
+          return true;
+        }
+      }catch(err){
+        console.warn("Native video fullscreen failed:", err);
+      }
+
+      // Second preference: standards-based element fullscreen for Android/desktop.
+      try{
+        if(typeof glowScreen.requestFullscreen === "function"){
+          const result = glowScreen.requestFullscreen();
+          if(result && typeof result.then === "function") await result;
+          requestGlowWakeLock();
+          return true;
+        }
+
+        if(typeof glowScreen.webkitRequestFullscreen === "function"){
+          const result = glowScreen.webkitRequestFullscreen();
+          if(result && typeof result.then === "function") await result;
+          requestGlowWakeLock();
+          return true;
+        }
+      }catch(err){
+        console.warn("Element fullscreen failed:", err);
       }
 
       requestGlowWakeLock();
-
-      // Some implementations update fullscreenElement on the next event turn.
-      await new Promise(resolve => setTimeout(resolve, 0));
-      return !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement
-      );
+      return false;
     }
-
     function syncFullscreenButton(){
       const isFs = !!(
         document.fullscreenElement ||
@@ -600,6 +658,16 @@
     });
     document.addEventListener("webkitfullscreenerror", ()=>{
       fullscreenButton.classList.remove("hidden");
+    });
+
+    glowMirrorVideo.addEventListener("webkitbeginfullscreen", ()=>{
+      fullscreenButton.classList.add("hidden");
+      requestGlowWakeLock();
+    });
+
+    glowMirrorVideo.addEventListener("webkitendfullscreen", ()=>{
+      fullscreenButton.classList.remove("hidden");
+      resizeGlow();
     });
 
     function glowTrackTime(){
@@ -914,6 +982,7 @@
     function activateGlow(){
       if(glowActive) return;
       glowActive=true;
+      ensureGlowVideoMirror();
       resizeGlow();
       glowScreen.classList.add('active');
       glowScreen.setAttribute('aria-hidden','false');
@@ -3124,6 +3193,14 @@
       if(performanceShouldBePlaying() && audio.paused){
         scheduleAutomaticInterruptionRecovery("Returning to performance");
       }
+    });
+
+
+    console.log("Fullscreen capabilities", {
+      videoWebkitEnterFullscreen: typeof glowMirrorVideo.webkitEnterFullscreen === "function",
+      videoWebkitEnterFullScreen: typeof glowMirrorVideo.webkitEnterFullScreen === "function",
+      canvasCaptureStream: typeof glowCanvas.captureStream === "function",
+      elementRequestFullscreen: typeof glowScreen.requestFullscreen === "function"
     });
 
     setDefaultStartTime();
