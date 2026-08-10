@@ -1,20 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
-  <!-- Keep browser UI dark in both device light and dark appearance modes. -->
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#050208">
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#050208">
-  <meta name="color-scheme" content="dark">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="application-name" content="Dance Party Now">
-  <meta name="apple-mobile-web-app-title" content="Dance Party Now">
-  <link rel="manifest" href="dance-party-now.webmanifest">
-
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#120b18" />
   <title>dance party now</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -187,7 +177,7 @@
       opacity:0;
       visibility:hidden;
       transition:opacity 700ms ease;
-      touch-action:pan-y pinch-zoom;
+      touch-action:manipulation;
       user-select:none;
       -webkit-user-select:none;
     }
@@ -281,20 +271,13 @@
     #glowResume.hidden{ display:none; }
 
   
-    html, body {
+    html, body, :root {
       margin: 0 !important;
       padding: 0 !important;
       width: 100%;
       min-height: 100%;
       background: #050208 !important;
       color-scheme: dark;
-      overscroll-behavior-x: none;
-      overscroll-behavior-y: auto;
-    }
-
-    html {
-      min-height: 100%;
-      background-color: #050208 !important;
     }
 
     body {
@@ -302,11 +285,8 @@
       min-height: 100dvh;
       overflow-x: hidden;
       overflow-y: auto;
-      background-color: #050208 !important;
-    }
-
-    /* Keep the browser's exposed/overscroll canvas from flashing white. */
-    :root {
+      overscroll-behavior-x: none;
+      overscroll-behavior-y: auto;
       background: #050208 !important;
     }
 
@@ -315,68 +295,53 @@
       background: #050208 !important;
     }
 
-    /* Fullscreen element must itself paint the entire viewport. */
-    :fullscreen,
-    :-webkit-full-screen {
-      width: 100vw !important;
-      height: 100vh !important;
-      background: #050208 !important;
-    }
-
-    :fullscreen #glowScreen,
-    :-webkit-full-screen #glowScreen {
-      position: fixed !important;
-      inset: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      min-height: 100vh !important;
-      min-height: 100dvh !important;
-      background: #050208 !important;
-    }
-
-
-    html, body, :root {
-      background-color: #050208 !important;
-    }
-    body {
-      min-height: 100svh;
-      min-height: 100dvh;
-    }
     #glowScreen {
-      top: 0;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      padding-top: env(safe-area-inset-top, 0px);
-      padding-right: env(safe-area-inset-right, 0px);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
-      padding-left: env(safe-area-inset-left, 0px);
-      box-sizing: border-box;
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      min-height: 100vh;
+      touch-action: pan-y pinch-zoom;
     }
 
 
-    #glowMirrorVideo{
-      position:absolute;
-      width:1px;
-      height:1px;
-      opacity:0;
-      pointer-events:none;
-      left:-9999px;
-      top:-9999px;
-      background:#050208;
-      object-fit:cover;
+    /* Persistent show-time fullscreen control on browsers that actually support it. */
+    #fullscreenButton{
+      position: fixed !important;
+      right: max(14px, env(safe-area-inset-right, 0px)) !important;
+      bottom: max(16px, calc(env(safe-area-inset-bottom, 0px) + 10px)) !important;
+      z-index: 5000 !important;
+      min-width: 132px;
+      min-height: 48px;
+      padding: 12px 18px !important;
+      border-radius: 999px !important;
+      border: 1px solid rgba(255,255,255,.28) !important;
+      background: rgba(5,2,8,.72) !important;
+      color: rgba(255,255,255,.96) !important;
+      font-size: 16px !important;
+      font-weight: 600 !important;
+      line-height: 1 !important;
+      letter-spacing: .01em;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 0 4px 18px rgba(0,0,0,.28);
+      opacity: .82;
+      transition: opacity .18s ease, transform .18s ease;
+      touch-action: manipulation;
     }
 
-    /* WebKit native video fullscreen controls its own presentation surface. */
-    #glowMirrorVideo::-webkit-media-controls{
-      display:none !important;
+    #fullscreenButton:active{
+      transform: scale(.97);
+      opacity: 1;
     }
 
+    #fullscreenButton.hidden{
+      display: none !important;
+    }
 
-    /* Countdown is baked into the canvas/video during the visual preshow.
-       Hide the old DOM copy there so only one number is visible. */
-    #glowScreen.active #glowCountdown{
-      display:none !important;
+    /* During the visual, keep it accessible above the canvas until fullscreen is chosen. */
+    #glowScreen.active #fullscreenButton{
+      display: block;
     }
 
 </style>
@@ -386,15 +351,9 @@
 
   <div id="glowScreen" aria-hidden="true">
     <canvas id="glowCanvas"></canvas>
-      <video id="glowMirrorVideo"
-             muted
-             autoplay
-             playsinline
-             webkit-playsinline
-             aria-hidden="true"></video>
     <div id="glowVignette"></div>
     <div id="glowCountdown" aria-live="polite"></div>
-    <button id="fullscreenButton" type="button">Go Fullscreen</button>
+    <button id="fullscreenButton" type="button">Full Screen</button>
     <button id="glowResume" class="hidden" type="button">Tap to resume sound</button>
   </div>
 
@@ -462,12 +421,10 @@
     // luminous object. It never drives audio or modifies the show clock.
     const glowScreen = document.getElementById("glowScreen");
     const glowCanvas = document.getElementById("glowCanvas");
-    const glowMirrorVideo = document.getElementById("glowMirrorVideo");
     const glowCtx = glowCanvas.getContext("2d", { alpha:false });
     const fullscreenButton = document.getElementById("fullscreenButton");
     const glowResume = document.getElementById("glowResume");
     let glowActive = false;
-    let glowCanvasCountdownText = "";
     let glowPerformanceStarted = false;
     let glowFrame = null;
     let glowTapTimes = [];
@@ -537,9 +494,8 @@
 
     function resizeGlow(){
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const vv = window.visualViewport;
-      const w = Math.max(1, vv ? vv.width : window.innerWidth);
-      const h = Math.max(1, vv ? vv.height : window.innerHeight);
+      const w = Math.max(1, window.innerWidth);
+      const h = Math.max(1, window.innerHeight);
       glowCanvas.width = Math.round(w * dpr);
       glowCanvas.height = Math.round(h * dpr);
       glowCanvas.style.width = `${w}px`;
@@ -563,120 +519,56 @@
       }
     }
 
-    
-    let glowMirrorStream = null;
-    let glowMirrorReady = false;
-
-    function ensureGlowVideoMirror(){
-      if(glowMirrorReady) return true;
-      if(!glowCanvas.captureStream){
-        console.warn("Canvas captureStream unavailable");
-        return false;
-      }
-
-      try{
-        glowMirrorStream = glowCanvas.captureStream(30);
-        glowMirrorVideo.srcObject = glowMirrorStream;
-        glowMirrorVideo.muted = true;
-        glowMirrorVideo.autoplay = true;
-        glowMirrorVideo.playsInline = true;
-
-        // Start playback immediately where policy permits. Because the video is
-        // muted and created from the live canvas, this should not interfere with
-        // the show's actual audio element.
-        const p = glowMirrorVideo.play();
-        if(p && typeof p.catch === "function"){
-          p.catch(err => console.warn("Mirror video play deferred:", err));
-        }
-
-        glowMirrorReady = true;
-        return true;
-      }catch(err){
-        console.warn("Could not initialize canvas mirror video:", err);
-        return false;
-      }
+    function standardFullscreenSupported(){
+      const el = glowScreen;
+      return !!(
+        (document.fullscreenEnabled && typeof el.requestFullscreen === "function") ||
+        (document.webkitFullscreenEnabled && typeof el.webkitRequestFullscreen === "function")
+      );
     }
 
-async function requestGlowFullscreen(){
-      document.documentElement.style.backgroundColor = "#050208";
-      document.body.style.backgroundColor = "#050208";
-      glowScreen.style.backgroundColor = "#050208";
+    async function requestGlowFullscreen(){
+      if(!standardFullscreenSupported()) return false;
 
-      // First preference on iPhone/iOS: native VIDEO fullscreen. This is the same
-      // class of fullscreen presentation used by ordinary web video players.
-      // The video is fed live from our canvas, so the graphics remain generated
-      // and clock-synchronized rather than pre-rendered.
       try{
-        ensureGlowVideoMirror();
-
-        if(typeof glowMirrorVideo.webkitEnterFullscreen === "function"){
-          // webkitEnterFullscreen must be called directly from a user gesture.
-          glowMirrorVideo.webkitEnterFullscreen();
-          requestGlowWakeLock();
-          return true;
-        }
-
-        if(typeof glowMirrorVideo.webkitEnterFullScreen === "function"){
-          glowMirrorVideo.webkitEnterFullScreen();
-          requestGlowWakeLock();
-          return true;
-        }
-      }catch(err){
-        console.warn("Native video fullscreen failed:", err);
-      }
-
-      // Second preference: standards-based element fullscreen for Android/desktop.
-      try{
-        if(typeof glowScreen.requestFullscreen === "function"){
+        if(document.fullscreenEnabled && typeof glowScreen.requestFullscreen === "function"){
           const result = glowScreen.requestFullscreen();
           if(result && typeof result.then === "function") await result;
-          requestGlowWakeLock();
-          return true;
-        }
-
-        if(typeof glowScreen.webkitRequestFullscreen === "function"){
+        }else if(document.webkitFullscreenEnabled && typeof glowScreen.webkitRequestFullscreen === "function"){
           const result = glowScreen.webkitRequestFullscreen();
           if(result && typeof result.then === "function") await result;
-          requestGlowWakeLock();
-          return true;
+        }else{
+          return false;
         }
+
+        requestGlowWakeLock();
+        return true;
       }catch(err){
-        console.warn("Element fullscreen failed:", err);
+        console.warn("Fullscreen request failed:", err);
+        return false;
+      }
+    }
+
+    function syncFullscreenAvailability(){
+      const supported = standardFullscreenSupported();
+      const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+      // Keep the control available throughout the running piece until the
+      // audience actually enters fullscreen. If they exit, it returns.
+      fullscreenButton.classList.toggle("hidden", !supported || isFs);
+
+      if(supported && !isFs){
+        fullscreenButton.textContent = "Full Screen";
+        fullscreenButton.setAttribute("aria-label", "Enter full screen");
       }
 
-      requestGlowWakeLock();
-      return false;
-    }
-    function syncFullscreenButton(){
-      const isFs = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement
-      );
-      fullscreenButton.classList.toggle("hidden", isFs);
-
-      // Re-measure after entering/exiting fullscreen because mobile viewport
-      // dimensions can change significantly.
       resizeGlow();
     }
 
-    document.addEventListener("fullscreenchange", syncFullscreenButton);
-    document.addEventListener("webkitfullscreenchange", syncFullscreenButton);
-    document.addEventListener("fullscreenerror", ()=>{
-      fullscreenButton.classList.remove("hidden");
-    });
-    document.addEventListener("webkitfullscreenerror", ()=>{
-      fullscreenButton.classList.remove("hidden");
-    });
-
-    glowMirrorVideo.addEventListener("webkitbeginfullscreen", ()=>{
-      fullscreenButton.classList.add("hidden");
-      requestGlowWakeLock();
-    });
-
-    glowMirrorVideo.addEventListener("webkitendfullscreen", ()=>{
-      fullscreenButton.classList.remove("hidden");
-      resizeGlow();
-    });
+    document.addEventListener("fullscreenchange", syncFullscreenAvailability);
+    document.addEventListener("webkitfullscreenchange", syncFullscreenAvailability);
+    document.addEventListener("fullscreenerror", syncFullscreenAvailability);
+    document.addEventListener("webkitfullscreenerror", syncFullscreenAvailability);
 
     function glowTrackTime(){
       // Canonical show time is the visual source of truth. This is what keeps
@@ -769,30 +661,10 @@ async function requestGlowFullscreen(){
       return `hsla(${((h%360)+360)%360} ${s}% ${l}% / ${a})`;
     }
 
-
-    function drawCountdownIntoGlowCanvas(w,h){
-      if(!glowCanvasCountdownText) return;
-
-      const minDim=Math.min(w,h);
-      const size=Math.max(72,Math.min(180,minDim*.27));
-
-      glowCtx.save();
-      glowCtx.globalCompositeOperation="source-over";
-      glowCtx.textAlign="center";
-      glowCtx.textBaseline="middle";
-      glowCtx.font=`700 ${size}px -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif`;
-      glowCtx.shadowColor="rgba(0,0,0,.78)";
-      glowCtx.shadowBlur=Math.max(20,size*.18);
-      glowCtx.fillStyle="rgba(255,255,255,.96)";
-      glowCtx.fillText(glowCanvasCountdownText,w/2,h/2);
-      glowCtx.restore();
-    }
-
     function drawGlow(nowMs){
       if(!glowActive) return;
-      const vv = window.visualViewport;
-      const w = vv ? vv.width : window.innerWidth;
-      const h = vv ? vv.height : window.innerHeight;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
       const trackT = glowTrackTime();
       const cue = cueBlendAt(trackT);
       // Once the performance begins, animation time itself comes from trackT.
@@ -832,7 +704,6 @@ async function requestGlowFullscreen(){
           glowCtx.fillStyle=g;
           glowCtx.fillRect(x-r,y-r,r*2,r*2);
         }
-        drawCountdownIntoGlowCanvas(w,h);
         glowFrame=requestAnimationFrame(drawGlow);
         return;
       }
@@ -1010,12 +881,10 @@ async function requestGlowFullscreen(){
     function activateGlow(){
       if(glowActive) return;
       glowActive=true;
-      ensureGlowVideoMirror();
       resizeGlow();
       glowScreen.classList.add('active');
       glowScreen.setAttribute('aria-hidden','false');
-      const alreadyFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
-      fullscreenButton.classList.toggle('hidden', alreadyFullscreen);
+      syncFullscreenAvailability();
       glowFrame=requestAnimationFrame(drawGlow);
     }
 
@@ -1045,14 +914,9 @@ async function requestGlowFullscreen(){
     });
 
     fullscreenButton.addEventListener('click', async (ev)=>{
-      // Keep this call as the first asynchronous operation initiated by the tap.
       ev.preventDefault();
       const entered = await requestGlowFullscreen();
-      if(entered){
-        fullscreenButton.classList.add('hidden');
-      }else{
-        fullscreenButton.classList.remove('hidden');
-      }
+      if(entered) syncFullscreenAvailability();
     });
 
     document.addEventListener('visibilitychange', ()=>{
@@ -1070,10 +934,7 @@ async function requestGlowFullscreen(){
       }
     });
 
-    // Emergency recovery gesture: pull down from the very top edge to reload.
-    // Native pull-to-refresh remains enabled where possible, but true browser
-    // fullscreen can suppress it. This gives the audience the same recovery
-    // gesture even while the visual layer is active/fullscreen.
+    // Emergency recovery gesture during the visual: pull down from the top edge.
     let glowPullStartY = null;
     let glowPullStartX = null;
     let glowPullArmed = false;
@@ -1091,13 +952,8 @@ async function requestGlowFullscreen(){
       const touch = ev.touches[0];
       const dy = touch.clientY - glowPullStartY;
       const dx = Math.abs(touch.clientX - glowPullStartX);
-
-      // Require an unmistakable downward pull from the top edge. This threshold
-      // is intentionally generous so ordinary dancing/handling does not reload.
       if(dy >= 140 && dx <= 90){
         glowPullArmed = false;
-        document.documentElement.style.backgroundColor = "#050208";
-        document.body.style.backgroundColor = "#050208";
         window.location.reload();
       }
     }, { passive:true });
@@ -1308,15 +1164,12 @@ async function requestGlowFullscreen(){
       countdownEl.textContent = msg;
       const numeric = Number(msg);
       if(msg === ""){
-        glowCanvasCountdownText = "";
         glowCountdownEl.textContent = "";
         glowCountdownEl.classList.remove("fadeZero");
         glowCountdownEl.style.opacity = "1";
         return;
       }
-      const displayValue = String(Math.max(0, Math.ceil(numeric || 0)));
-      glowCanvasCountdownText = displayValue;
-      glowCountdownEl.textContent = displayValue;
+      glowCountdownEl.textContent = String(Math.max(0, Math.ceil(numeric || 0)));
       glowCountdownEl.classList.remove("fadeZero");
       glowCountdownEl.style.opacity = "1";
     }
@@ -3226,14 +3079,7 @@ async function requestGlowFullscreen(){
       }
     });
 
-
-    console.log("Fullscreen capabilities", {
-      videoWebkitEnterFullscreen: typeof glowMirrorVideo.webkitEnterFullscreen === "function",
-      videoWebkitEnterFullScreen: typeof glowMirrorVideo.webkitEnterFullScreen === "function",
-      canvasCaptureStream: typeof glowCanvas.captureStream === "function",
-      elementRequestFullscreen: typeof glowScreen.requestFullscreen === "function"
-    });
-
+    syncFullscreenAvailability();
     setDefaultStartTime();
     updateTransport();
     updateDriftStats();
