@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
   <meta name="theme-color" content="#120b18" />
-  <title>dance party now</title>
+  <title>crank all devices &amp; turn off lights</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -205,17 +205,17 @@
     #glowCountdown{
       position:absolute;
       left:50%;
-      top:max(7vh,28px);
-      transform:translateX(-50%);
+      top:50%;
+      transform:translate(-50%,-50%);
       z-index:3;
-      min-width:12ch;
       text-align:center;
-      font-size:clamp(1.35rem,5vw,2.2rem);
-      font-weight:700;
-      letter-spacing:.02em;
-      color:rgba(255,255,255,.94);
+      font-size:clamp(4rem,18vw,8rem);
+      font-weight:500;
+      line-height:1;
+      letter-spacing:0;
+      color:#fff;
       font-variant-numeric:tabular-nums;
-      text-shadow:0 2px 18px rgba(0,0,0,.55);
+      text-shadow:none;
       pointer-events:none;
     }
 
@@ -274,7 +274,7 @@
   <main class="container">
     <div class="header">
       <h1>dance party now</h1>
-      <div class="subtitle">crank all devices & turn off lights</div>
+      <div class="subtitle">crank all devices &amp; turn off lights</div>
     </div>
 
     <label for="startTime">Start Time</label>
@@ -428,9 +428,11 @@
       const cue = cueAt(trackT);
       const clock = nowMs / 1000;
       const phase = glowVariant * Math.PI * 2;
-      const beat = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p + phase * .16);
+      const beat = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p + phase * .10);
+      const beat2 = .5 + .5 * Math.sin(clock * Math.PI * 2 * cue.p * 2 + phase * .22);
       const breath = .5 + .5 * Math.sin(clock * .58 + phase);
-      const energy = cue.e * (.86 + beat * .14);
+      const pulse = Math.pow(beat, 1.7);
+      const energy = cue.e * (.58 + pulse * .72 + beat2 * .10);
 
       glowCtx.globalCompositeOperation = 'source-over';
       // Deep-purple luminous field beneath every state.
@@ -469,15 +471,20 @@
 
       glowCtx.globalCompositeOperation = 'screen';
       for(const b of blobs){
-        const x=b.x*w, y=b.y*h, r=b.r*Math.max(w,h)*( .88 + .10*breath );
+        const x=b.x*w, y=b.y*h, r=b.r*Math.max(w,h)*( .72 + .24*pulse + .07*breath );
         const g=glowCtx.createRadialGradient(x,y,0,x,y,r);
-        g.addColorStop(0, hsl(b.hue + 18*beat, 98, 64, .88*energy));
-        g.addColorStop(.22, hsl(b.hue, 96, 54, .62*energy));
-        g.addColorStop(.58, hsl(b.hue-18, 94, 42, .22*energy));
+        g.addColorStop(0, hsl(b.hue + 22*beat, 100, 68, Math.min(1,.98*energy)));
+        g.addColorStop(.20, hsl(b.hue, 100, 58, Math.min(1,.78*energy)));
+        g.addColorStop(.58, hsl(b.hue-18, 98, 44, .30*energy));
         g.addColorStop(1, hsl(b.hue, 90, 24, 0));
         glowCtx.fillStyle=g;
         glowCtx.fillRect(x-r,y-r,r*2,r*2);
       }
+
+      // Broad synchronized luminosity pulse: the handset itself should visibly "breathe".
+      glowCtx.globalCompositeOperation = 'screen';
+      glowCtx.fillStyle = hsl(cue.a + 40*beat, 96, 56, .035 + .12*pulse);
+      glowCtx.fillRect(0,0,w,h);
 
       // Central 'living object': a soft orb with a heartbeat-like expansion.
       const cx=w*(.50 + .025*Math.sin(clock*.41+phase));
@@ -2665,3 +2672,4 @@
   </script>
 </body>
 </html>
+
